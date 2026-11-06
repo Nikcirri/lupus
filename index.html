@@ -117,7 +117,7 @@
       color: var(--text-main);
       min-width: 42px;
       height: 42px;
-      padding: 0 10px;
+      padding: 0 8px;
       border-radius: var(--radius-sm);
       display: inline-flex;
       align-items: center;
@@ -129,7 +129,11 @@
       transition: background 0.15s, transform 0.1s;
     }
 
-    .icon-btn:active {
+    .icon-btn:disabled {
+      opacity: 0.35;
+    }
+
+    .icon-btn:active:not(:disabled) {
       background: var(--bg-elevated);
       transform: scale(0.96);
     }
@@ -1156,6 +1160,192 @@
       padding: 10px 12px;
       font-size: 0.9rem;
     }
+    /* Ruolo visibile solo con il dito premuto */
+    .hold-btn {
+      min-height: 110px;
+      font-size: 1.08rem;
+      border-radius: var(--radius-lg);
+      touch-action: none;
+      -webkit-touch-callout: none;
+    }
+
+    .hold-reveal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1500;
+      background: var(--bg-main);
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: calc(24px + var(--safe-top)) 16px calc(16px + var(--safe-bottom));
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .hold-reveal-overlay.visible {
+      display: flex;
+    }
+
+    .hold-reveal-card {
+      width: 100%;
+      max-width: 560px;
+      margin: 0;
+    }
+
+    .hold-reveal-hint {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    /* Votazione al rogo */
+    .vote-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: var(--bg-main);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+    }
+
+    .vote-voter {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .vote-select {
+      min-height: 42px;
+    }
+
+    .tally-row {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-main);
+      overflow: hidden;
+    }
+
+    .tally-bar {
+      position: absolute;
+      inset: 0 auto 0 0;
+      background: rgba(59, 130, 246, 0.18);
+      pointer-events: none;
+    }
+
+    .tally-leader {
+      border-color: var(--accent-warning);
+    }
+
+    .tally-leader .tally-bar {
+      background: rgba(245, 158, 11, 0.25);
+    }
+
+    .tally-name, .tally-votes {
+      position: relative;
+      font-weight: 700;
+    }
+
+    /* Riepilogo partita */
+    .summary-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: flex-start;
+    }
+
+    .summary-player {
+      font-size: 0.92rem;
+    }
+
+    .summary-turn {
+      border-left: 4px solid var(--accent-primary);
+      background: var(--bg-main);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      font-size: 0.9rem;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .summary-day {
+      border-left-color: var(--accent-warning);
+    }
+
+    .summary-turn-title {
+      font-weight: 800;
+      color: #FFFFFF;
+    }
+
+    /* Guida dei ruoli */
+    .guide-rules {
+      background: var(--bg-main);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-size: 0.92rem;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .guide-faction {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .guide-faction-head {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: flex-start;
+    }
+
+    .guide-role {
+      background: var(--bg-main);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.92rem;
+    }
+
+    .guide-role-name {
+      font-weight: 700;
+      font-size: 1rem;
+      color: #FFFFFF;
+    }
+
+    .guide-role-icon {
+      font-size: 1.3rem;
+    }
+
+    /* Condivisione ruoli */
+    .share-role-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      background: var(--bg-main);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+    }
+
+    .share-role-row input {
+      width: 22px;
+      height: 22px;
+      accent-color: var(--accent-primary);
+    }
   </style>
 </head>
 <body>
@@ -1164,15 +1354,15 @@
     <!-- BARRA SUPERIORE FISSA -->
     <header class="top-bar">
       <div class="top-bar-title">
-        <span>🐺</span>
+        <span id="headerIcon">🐺</span>
         <span id="headerTitle">Lupus</span>
       </div>
       <div class="top-bar-actions">
         <button id="btnAntiAmnesiaTop" class="icon-btn" style="display: none;" onclick="openAntiAmnesiaSelector()" title="Anti-Amnesia">
           👁️ <span style="font-size:0.82rem;">Ruoli</span>
         </button>
-        <button id="btnFullscreen" class="icon-btn" onclick="toggleFullScreen()" title="Schermo Intero" aria-label="Schermo intero">
-          ⛶
+        <button id="btnUndoTop" class="icon-btn" style="display: none;" onclick="undoPhaseChange()" title="Torna alla fase precedente" aria-label="Torna alla fase precedente">
+          ↩️ <span style="font-size:0.82rem;">Fase</span>
         </button>
         <button id="btnInfoTop" class="icon-btn" onclick="openInfoModal()" title="Informazioni e aggiornamenti" aria-label="Informazioni e aggiornamenti">
           ℹ️
@@ -1250,9 +1440,14 @@
           </label>
         </div>
 
-        <button class="btn" onclick="openRoleEditorScreen()">
-          🛠️ Gestisci / Crea Ruoli (<span id="totalRolesDbCount">13</span>)
-        </button>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn" style="flex: 2;" onclick="openRoleEditorScreen()">
+            🛠️ Gestisci / Crea Ruoli (<span id="totalRolesDbCount">13</span>)
+          </button>
+          <button class="btn" style="flex: 1;" onclick="openGuideModal()">
+            📖 Guida
+          </button>
+        </div>
       </div>
 
       <!-- Selezione Ruoli (Tab Preset / Personalizza) -->
@@ -1322,6 +1517,11 @@
             🔄 Ripristina i 13 Ruoli Predefiniti
           </button>
         </div>
+
+        <div style="display: flex; gap: 8px;">
+          <button class="btn" style="flex: 1;" onclick="openShareRolesModal()">📤 Condividi ruoli</button>
+          <button class="btn" style="flex: 1;" onclick="openImportRolesModal()">📥 Importa ruoli</button>
+        </div>
       </div>
 
       <div id="editorRolesList" class="role-selector-list"></div>
@@ -1337,32 +1537,36 @@
         <div style="font-size: 1rem; color: var(--text-muted);">Passa il telefono a:</div>
         <div id="distPlayerNameCover" class="role-big-name">Nome Giocatore</div>
         <p class="card-subtitle" style="max-width: 320px;">
-          Assicurati che nessun altro stia guardando lo schermo prima di premere il pulsante.
+          Assicurati che nessun altro stia guardando lo schermo. Il ruolo resta visibile solo finché tieni il dito premuto.
         </p>
-        <button id="btnRevealRole" class="btn btn-primary" style="margin-top: 10px;" onclick="revealCurrentPlayerRole()">
-          👁️ Sono io, mostra il mio ruolo
+        <button id="btnRevealRole" class="btn btn-primary hold-btn" style="margin-top: 10px;">
+          👆 Tieni premuto qui per vedere il tuo ruolo
+        </button>
+        <button id="btnDistNext" class="btn btn-success" onclick="nextDistributionPlayer()" disabled>
+          ✅ Ho visto
         </button>
       </div>
 
-      <div id="distStepReveal" class="pass-card" style="display: none;">
-        <span id="distPlayerNameReveal" class="badge">Giocatore</span>
-        <div id="distRoleIcon" class="role-big-icon">🐺</div>
-        <div id="distRoleName" class="role-big-name">Lupo Mannaro</div>
-        <span id="distRoleFaction" class="badge badge-branco">Branco</span>
+      <!-- Ruolo visibile solo mentre il dito è premuto sul pulsante -->
+      <div id="distStepReveal" class="hold-reveal-overlay" aria-live="polite">
+        <div class="pass-card hold-reveal-card">
+          <span id="distPlayerName" class="badge">Giocatore</span>
+          <div id="distRoleIcon" class="role-big-icon">🐺</div>
+          <div id="distRoleName" class="role-big-name">Ruolo</div>
+          <span id="distRoleFaction" class="badge">Fazione</span>
 
-        <div class="role-info-box">
-          <div class="role-info-label">Cosa fai</div>
-          <div id="distRoleWhat" style="font-size: 0.98rem;">Descrizione potere</div>
+          <div class="role-info-box">
+            <div class="role-info-label">Cosa fai</div>
+            <div id="distRoleWhat" style="font-size: 0.98rem;"></div>
+          </div>
+
+          <div class="role-info-box">
+            <div class="role-info-label">Come vinci</div>
+            <div id="distRoleWin" style="font-size: 0.98rem;"></div>
+          </div>
+
+          <div class="hold-reveal-hint">✋ Alza il dito per nascondere il ruolo</div>
         </div>
-
-        <div class="role-info-box">
-          <div class="role-info-label">Come vinci</div>
-          <div id="distRoleWin" style="font-size: 0.98rem;">Condizione di vittoria</div>
-        </div>
-
-        <button class="btn btn-success" style="margin-top: 8px;" onclick="nextDistributionPlayer()">
-          🙈 Ho capito, nascondi ruolo
-        </button>
       </div>
 
       <div id="distStepComplete" class="pass-card" style="display: none;">
@@ -1407,6 +1611,9 @@
           </button>
           <button class="btn btn-sm" style="flex: 1;" onclick="returnToSetupScreen()">
             🏠 Torna al Setup
+          </button>
+          <button class="btn btn-sm" style="flex: 1;" onclick="openSummaryModal()">
+            📜 Riepilogo
           </button>
           <button class="btn btn-sm" onclick="dismissVictoryBanner()">
             ✖ Continua
@@ -1476,34 +1683,34 @@
         <div style="font-size: 3.5rem;">🤫</div>
         <div style="color: var(--text-muted);">Passa il telefono a:</div>
         <div id="aaCoverPlayerName" class="role-big-name">Giocatore</div>
-        <button class="btn btn-primary" style="margin-top: 10px;" onclick="revealAntiAmnesiaCard()">
-          👁️ Passa il telefono a <span id="aaBtnPlayerName"></span> e premi qui
+        <button id="btnAaReveal" class="btn btn-primary hold-btn" style="margin-top: 10px;">
+          👆 Tieni premuto qui per vedere il tuo ruolo
         </button>
-        <button class="btn btn-sm" style="margin-top: 6px;" onclick="closeAntiAmnesiaModal()">
-          Annulla e torna al Narratore
+        <button class="btn" style="margin-top: 6px;" onclick="closeAntiAmnesiaModal()">
+          ✅ Fatto, torna al Narratore
         </button>
       </div>
 
-      <!-- Step 2: Scheda Ruolo a Tutto Schermo -->
-      <div id="aaStepCard" class="pass-card" style="display: none;">
-        <span id="aaCardPlayerName" class="badge">Giocatore</span>
-        <div id="aaRoleIcon" class="role-big-icon">🔮</div>
-        <div id="aaRoleName" class="role-big-name">Ruolo</div>
-        <span id="aaRoleFaction" class="badge">Fazione</span>
+      <!-- Scheda del ruolo: visibile solo mentre il dito è premuto -->
+      <div id="aaStepCard" class="hold-reveal-overlay" aria-live="polite">
+        <div class="pass-card hold-reveal-card">
+          <span id="aaPlayerName" class="badge">Giocatore</span>
+          <div id="aaRoleIcon" class="role-big-icon">🐺</div>
+          <div id="aaRoleName" class="role-big-name">Ruolo</div>
+          <span id="aaRoleFaction" class="badge">Fazione</span>
 
-        <div class="role-info-box">
-          <div class="role-info-label">Cosa fai</div>
-          <div id="aaRoleWhat"></div>
+          <div class="role-info-box">
+            <div class="role-info-label">Cosa fai</div>
+            <div id="aaRoleWhat" style="font-size: 0.98rem;"></div>
+          </div>
+
+          <div class="role-info-box">
+            <div class="role-info-label">Come vinci</div>
+            <div id="aaRoleWin" style="font-size: 0.98rem;"></div>
+          </div>
+
+          <div class="hold-reveal-hint">✋ Alza il dito per nascondere il ruolo</div>
         </div>
-
-        <div class="role-info-box">
-          <div class="role-info-label">Come vinci</div>
-          <div id="aaRoleWin"></div>
-        </div>
-
-        <button class="btn btn-success" style="margin-top: 10px;" onclick="closeAntiAmnesiaModal()">
-          🙈 Nascondi e torna al Narratore
-        </button>
       </div>
     </div>
   </div>
@@ -1529,16 +1736,20 @@
         </label>
       </div>
 
-      <button id="btnUndoPhase" class="btn" onclick="undoPhaseChange()" style="display: none;">
-        ↩️ Torna alla fase precedente
-      </button>
-
       <button class="btn btn-primary" onclick="confirmQuickRematch()">
         🔄 Rivincita Rapida (Stessi giocatori e ruoli)
       </button>
 
       <button class="btn btn-danger" onclick="confirmReturnToSetup()">
         🏠 Torna al Setup (Modifica giocatori o ruoli)
+      </button>
+
+      <button class="btn" onclick="openSummaryModal()">
+        📜 Riepilogo e cronologia (svela i ruoli)
+      </button>
+
+      <button class="btn" onclick="openGuideModal()">
+        📖 Guida dei ruoli
       </button>
 
       <button class="btn" onclick="openInfoModal()">
@@ -1677,6 +1888,120 @@
         Per aggiornare: scarica il file, aprilo e tocca <strong>Aggiorna</strong>. La nuova versione si installa sopra quella vecchia e i dati restano.
       </p>
       <button class="btn" onclick="closeInfoModal()">Chiudi</button>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODALE: VOTAZIONE AL ROGO
+  =========================================== -->
+  <div id="modalVote" class="modal-overlay">
+    <div class="modal-box">
+      <div class="card-header">
+        <div id="voteTitle" class="card-title">🗳️ Votazione al rogo</div>
+        <button class="icon-btn" onclick="closeVoteModal()" aria-label="Chiudi">✖</button>
+      </div>
+      <p class="card-subtitle">Chiedi a ognuno chi vuole mandare al rogo. Votano i vivi e il Fantasma 👻; il voto del Sindaco 🎖️ vale doppio.</p>
+      <div id="voteProgress" class="badge" style="align-self: flex-start;">Hanno votato 0</div>
+      <div id="voteTally" style="display: flex; flex-direction: column; gap: 6px;"></div>
+      <div id="voteActions" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      <div class="role-info-label">Voti dei giocatori</div>
+      <div id="voteVotersList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn btn-sm" style="flex: 1;" onclick="resetVotes()">🔄 Azzera i voti</button>
+        <button id="btnVoteRestart" class="btn btn-sm" style="flex: 1; display: none;" onclick="restartVoteFromScratch()">↩️ Annulla ballottaggio</button>
+      </div>
+      <button class="btn" onclick="closeVoteModal()">Chiudi (i voti restano salvati)</button>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODALE: RIEPILOGO DELLA PARTITA
+  =========================================== -->
+  <div id="modalSummary" class="modal-overlay">
+    <div class="modal-box">
+      <div class="card-header">
+        <div class="card-title">📜 Riepilogo della partita</div>
+        <button class="icon-btn" onclick="closeSummaryModal()" aria-label="Chiudi">✖</button>
+      </div>
+      <div id="summaryWinner"></div>
+      <div class="role-info-label">Chi era chi</div>
+      <div id="summaryRoles" style="display: flex; flex-direction: column; gap: 12px;"></div>
+      <div class="role-info-label">Cronologia</div>
+      <div id="summaryTimeline" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      <button class="btn" onclick="closeSummaryModal()">Chiudi</button>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODALE: GUIDA DEI RUOLI
+  =========================================== -->
+  <div id="modalGuide" class="modal-overlay">
+    <div class="modal-box">
+      <div class="card-header">
+        <div class="card-title">📖 Guida di Lupus</div>
+        <button class="icon-btn" onclick="closeGuideModal()" aria-label="Chiudi">✖</button>
+      </div>
+      <div class="guide-rules">
+        <div class="role-info-label">Come si gioca</div>
+        <div>🎙️ Il <strong>Narratore</strong> non gioca: guida la partita con questa app.</div>
+        <div>🃏 Ognuno riceve un <strong>ruolo segreto</strong>. Le squadre principali sono il <strong>Villaggio</strong> (i buoni) e il <strong>Branco</strong> dei Lupi Mannari; ci sono anche alleati dei lupi e ruoli solitari.</div>
+        <div>🌙 <strong>Di notte</strong> tutti chiudono gli occhi. Il Narratore chiama i ruoli uno alla volta: i Lupi scelgono una vittima, gli altri usano i loro poteri.</div>
+        <div>☀️ <strong>Di giorno</strong> tutti aprono gli occhi e il Narratore annuncia chi è morto. Il villaggio discute e vota chi mandare al <strong>rogo</strong>: il più votato viene eliminato.</div>
+        <div>💀 Chi muore esce dal gioco: non parla più e non rivela il suo ruolo.</div>
+        <div>🏆 Vince il <strong>Villaggio</strong> quando tutti i lupi sono morti; vince il <strong>Branco</strong> quando i lupi sono tanti quanti gli altri vivi. Alcuni solitari possono rubare la vittoria a tutti!</div>
+        <div id="guideGhostRule">👻 <strong>Regola del Fantasma:</strong> il primo buono che muore diventa il Fantasma: resta in silenzio ma può ancora votare al rogo.</div>
+      </div>
+      <label id="guideFilterRow" class="switch-row" style="cursor: pointer;">
+        <span class="switch-info">
+          <span class="switch-title">Solo i ruoli di questa partita</span>
+          <span class="switch-desc">Mostra solo i ruoli nel mazzo scelto</span>
+        </span>
+        <span class="switch">
+          <input type="checkbox" id="guideOnlyDeck" onchange="renderGuide()">
+          <span class="slider"></span>
+        </span>
+      </label>
+      <div id="guideRoles" style="display: flex; flex-direction: column; gap: 16px;"></div>
+      <button class="btn" onclick="closeGuideModal()">Chiudi</button>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODALE: CONDIVIDI RUOLI
+  =========================================== -->
+  <div id="modalShareRoles" class="modal-overlay">
+    <div class="modal-box">
+      <div class="card-header">
+        <div class="card-title">📤 Condividi ruoli</div>
+        <button class="icon-btn" onclick="closeShareRolesModal()" aria-label="Chiudi">✖</button>
+      </div>
+      <p class="card-subtitle">Scegli i ruoli da mandare agli amici (per esempio su WhatsApp). Sono già selezionati quelli che hai creato o modificato.</p>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-sm" style="flex: 1;" onclick="setAllShareRoles(true)">Tutti</button>
+        <button class="btn btn-sm" style="flex: 1;" onclick="setAllShareRoles(false)">Nessuno</button>
+      </div>
+      <div id="shareRolesList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+      <button id="btnShareRolesSend" class="btn btn-primary" onclick="shareSelectedRoles()">📤 Condividi</button>
+      <button id="btnShareRolesCopy" class="btn" onclick="copySelectedRoles()">📋 Copia il messaggio</button>
+      <button class="btn btn-sm" onclick="closeShareRolesModal()">Chiudi</button>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODALE: IMPORTA RUOLI
+  =========================================== -->
+  <div id="modalImportRoles" class="modal-overlay">
+    <div class="modal-box">
+      <div class="card-header">
+        <div class="card-title">📥 Importa ruoli</div>
+        <button class="icon-btn" onclick="closeImportRolesModal()" aria-label="Chiudi">✖</button>
+      </div>
+      <p class="card-subtitle">Copia il messaggio con i ruoli che ti hanno mandato (tieni premuto sul messaggio → Copia), poi incollalo qui sotto. I ruoli con lo stesso nome dei tuoi vengono aggiornati.</p>
+      <button class="btn btn-primary" onclick="pasteImportRoles()">📋 Incolla il messaggio copiato</button>
+      <textarea id="importRolesText" class="textarea-field" placeholder="Oppure tieni premuto qui e scegli Incolla..." oninput="previewImportRoles()"></textarea>
+      <div id="importRolesPreview" style="display: flex; flex-direction: column; gap: 6px;"></div>
+      <button id="btnImportRolesConfirm" class="btn btn-success" style="display: none;" onclick="confirmImportRoles()">📥 Importa</button>
+      <button class="btn btn-sm" onclick="closeImportRolesModal()">Chiudi</button>
     </div>
   </div>
 

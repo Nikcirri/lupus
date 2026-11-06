@@ -29,12 +29,26 @@ def check(cond, msg):
     print("  ok -", msg)
 
 
+def hold(page, selector, overlay, during=None):
+    """Tiene premuto il dito su un pulsante: restituisce (visibile mentre premuto, nascosto dopo)."""
+    box = page.locator(selector).bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    shown = page.locator(overlay).is_visible()
+    if during:
+        during()
+    page.mouse.up()
+    return shown, page.locator(overlay).is_hidden()
+
+
 def main():
     httpd = serve()
     url = f"http://127.0.0.1:{httpd.server_address[1]}/index.html"
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="chrome", headless=True)
-        page = browser.new_page(viewport={"width": 390, "height": 844})
+        context = browser.new_context(viewport={"width": 390, "height": 844})
+        context.grant_permissions(["clipboard-read", "clipboard-write"])
+        page = context.new_page()
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
         page.goto(url)
@@ -46,6 +60,7 @@ def main():
         page.fill("#playerNameInput", "Anna, Bruno, Carla, Dario, Elena, Fabio")
         page.click("text=+ Aggiungi")
         check(page.locator(".player-chip").count() == 6, "6 giocatori aggiunti")
+        check(page.locator("#btnFullscreen").count() == 0, "niente pulsante schermo intero")
         check(not page.locator("#btnStartDistribution").is_disabled(), "preset scelto in automatico: si può distribuire")
 
         # Mazzo personalizzato senza lupi: deve spiegare il problema
@@ -69,14 +84,16 @@ def main():
         print("Distribuzione")
         page.click("#btnStartDistribution")
         for i in range(6):
-            page.click("#btnRevealRole")
-            check(page.locator("#distStepReveal").is_visible(), f"ruolo {i + 1} mostrato")
+            check(page.locator("#btnDistNext").is_disabled(), f"giocatore {i + 1}: 'Ho visto' spento prima di guardare")
             if i == 0:
-                # Tasto Indietro con il ruolo scoperto: lo copre senza passare oltre
-                check(page.evaluate("handleAndroidBack()") is True, "indietro gestito")
-                check(page.locator("#distStepCover").is_visible(), "indietro ricopre il ruolo")
-                page.click("#btnRevealRole")
-            page.click("text=Ho capito, nascondi ruolo")
+                # Tasto Indietro mentre il ruolo è visibile: lo copre
+                shown, hidden = hold(page, "#btnRevealRole", "#distStepReveal",
+                                     lambda: check(page.evaluate("handleAndroidBack()") is True, "indietro gestito"))
+            else:
+                shown, hidden = hold(page, "#btnRevealRole", "#distStepReveal")
+            check(shown and hidden, f"ruolo {i + 1} visibile solo col dito premuto")
+            check(page.locator("#btnDistNext").is_enabled(), f"giocatore {i + 1}: 'Ho visto' acceso")
+            page.click("#btnDistNext")
         page.click("text=Inizia la Partita")
         check(page.locator("#screenNarrator").is_visible(), "cruscotto del narratore")
         check(page.locator(".scaletta-step").first.inner_text().strip().startswith("1."), "scaletta numerata da 1")
@@ -110,13 +127,51 @@ def main():
         check("GIULLARE" in page.locator("#victoryBannerText").inner_text(), "vittoria del Giullare al rogo")
         page.click("text=✖ Continua")
 
-        # Riporta in vita Elena e brucia Anna (lupo) per il Medium
+        # Riporta in vita Elena e manda al rogo Anna (lupo) con la votazione
         cards.nth(4).locator("button[title='Elimina / Uccidi giocatore']").click()
         check("Vivo" in cards.nth(4).inner_text(), "Elena di nuovo viva")
-        cards.nth(0).locator("button[title='Elimina / Uccidi giocatore']").click()
-        page.click("#modalDeathCause button:has-text('Bruciato al rogo')")
+
+        print("Votazione")
+        page.click("button:has-text('Apri la votazione')")
+        check(page.locator("#modalVote").is_visible(), "finestra votazione")
+        selects = page.locator("#voteVotersList select")
+        check(selects.count() == 6, "votano 5 vivi + il Fantasma")
+        # Pareggio: Anna 2 (Bruno, Carla) - Bruno 2 (Anna, Dario fantasma)
+        selects.nth(0).select_option("p_1")
+        selects.nth(1).select_option("p_0")
+        selects.nth(2).select_option("p_0")
+        selects.nth(3).select_option("p_1")
+        check("Pareggio" in page.locator("#voteActions").inner_text(), "pareggio riconosciuto")
+        page.click("#voteActions button:has-text('Ballottaggio')")
+        selects = page.locator("#voteVotersList select")
+        check(selects.nth(0).locator("option").count() == 3, "al ballottaggio si vota solo tra i due")
+        for i in (1, 2, 3):
+            selects.nth(i).select_option("p_0")
+        check("Brucia Anna (3 voti)" in page.locator("#voteActions").inner_text(), "Anna in testa con 3 voti")
+        page.click("#voteActions button:has-text('Brucia Anna')")
+        page.click("#confirmBtnYes")
+        check(page.locator("#modalVote").is_hidden(), "votazione chiusa")
+        check(page.evaluate("activeMatch.players[0].deathCause") == "rogo", "Anna bruciata al rogo")
         check("VILLAGGIO" in page.locator("#victoryBannerText").inner_text(), "lupo bruciato: vince il villaggio")
+
+        print("Riepilogo")
+        page.click("#victoryBanner button:has-text('Riepilogo')")
+        roles_txt = page.locator("#summaryRoles").inner_text()
+        timeline_txt = page.locator("#summaryTimeline").inner_text()
+        check("Anna" in roles_txt and "Lupo Mannaro" in roles_txt, "riepilogo: chi era chi")
+        check("lupi hanno scelto Dario" in timeline_txt, "cronologia: scelta dei lupi")
+        check("Bruciato al rogo: Anna" in timeline_txt, "cronologia: rogo di Anna")
+        page.evaluate("handleAndroidBack()")
+        check(page.locator("#modalSummary").is_hidden(), "indietro chiude il riepilogo")
         page.click("text=✖ Continua")
+
+        print("Anti-amnesia")
+        cards.nth(1).locator("button[title='Mostra carta ruolo a questo giocatore']").click()
+        check(page.locator("#modalAntiAmnesiaSafeView").is_visible(), "schermata coperta")
+        shown, hidden = hold(page, "#btnAaReveal", "#aaStepCard")
+        check(shown and hidden, "ruolo dell'anti-amnesia solo col dito premuto")
+        check("Veggente" in page.locator("#aaRoleName").inner_text(), "ruolo giusto mostrato")
+        page.click("text=Fatto, torna al Narratore")
 
         # Timer regolabile
         page.click("text=+30s")
@@ -129,12 +184,18 @@ def main():
         check("Ieri al rogo è morto Anna" in night and "Fai SÌ" in night, "Medium: Anna era lupo")
         check(page.locator(".np-action-btn.active-wolf").count() == 0, "segnalini della notte puliti")
 
-        # Annulla il cambio di fase
-        page.click("#btnSettingsTop")
-        check(page.locator("#btnUndoPhase").is_visible(), "pulsante torna alla fase precedente")
-        page.click("#btnUndoPhase")
+        # Annulla il cambio di fase con il pulsante ↩️ in alto (anche più volte di fila)
+        check(page.locator("#btnUndoTop").is_enabled(), "pulsante ↩️ attivo")
+        page.click("#btnUndoTop")
         page.click("#confirmBtnYes")
         check("Giorno 1" in page.locator("#narratorPhaseBadge").inner_text(), "tornato al Giorno 1")
+        page.click("#btnUndoTop")
+        page.click("#confirmBtnYes")
+        check("Notte 1" in page.locator("#narratorPhaseBadge").inner_text(), "tornato alla Notte 1")
+        check(page.locator("#btnUndoTop").is_disabled(), "↩️ spento alla prima fase")
+        page.click("#btnTogglePhase")
+        check("Giorno 1" in page.locator("#narratorPhaseBadge").inner_text(), "di nuovo al Giorno 1")
+        page.evaluate("activeMatch.players.forEach(p => { if (p.id === 'p_0') { p.isDead = true; p.deathCause = 'rogo'; p.diedOnTurn = 1; } }); saveMatchToStorage(); renderNarratorDashboard();")
 
         # Indietro sul cruscotto: chiede se uscire
         check(page.evaluate("handleAndroidBack()") is True, "indietro sul cruscotto gestito")
@@ -163,8 +224,31 @@ def main():
         page.click("text=Salva Ruolo")
         saved = page.evaluate("rolesDB.find(r => r.name === 'Mugnaio')")
         check(saved and saved["icon"] == "🧑‍🌾", "emoji composta salvata intera")
+        print("Condividere i ruoli")
+        page.click("text=Condividi ruoli")
+        check(page.locator("#shareRolesList input:checked").count() == 1, "preselezionato solo il ruolo creato")
+        page.click("#btnShareRolesCopy")
+        copied = page.evaluate("navigator.clipboard.readText()")
+        check("LUPUS-RUOLI-1:" in copied and "Mugnaio" in copied, "messaggio copiato con il codice")
+        page.evaluate("handleAndroidBack()")
+        page.click("text=Importa ruoli")
+        code = page.evaluate("""encodeRolesShare([{ name: 'Fornaio', icon: '🥖', faction: 'Villaggio', whatYouDo: 'Sforna il pane.', howYouWin: 'Col villaggio.', wakeTiming: 'mai', priority: 5 }, { name: 'Mugnaio', icon: '🌾', faction: 'Villaggio', whatYouDo: 'Testo nuovo.', howYouWin: 'Col villaggio.', wakeTiming: 'mai', priority: 5 }])""")
+        page.fill("#importRolesText", "Ciao! " + code + " a presto")
+        preview = page.locator("#importRolesPreview").inner_text()
+        check("Fornaio" in preview and "nuovo" in preview and "aggiorna" in preview, "anteprima dell'importazione")
+        page.click("#btnImportRolesConfirm")
+        check(page.evaluate("rolesDB.some(r => r.name === 'Fornaio')"), "ruolo importato")
+        check(page.evaluate("rolesDB.find(r => r.name === 'Mugnaio').whatYouDo") == "Testo nuovo.", "ruolo con lo stesso nome aggiornato")
+
         page.evaluate("handleAndroidBack()")
         check(page.locator("#screenSetup").is_visible(), "indietro dall'editor torna al setup")
+
+        print("Guida")
+        page.click("#screenSetup button:has-text('Guida')")
+        guide = page.locator("#modalGuide").inner_text()
+        check("come si gioca" in guide.lower() and "Lupo Mannaro" in guide and "Fornaio" in guide, "guida con regole e ruoli")
+        page.evaluate("handleAndroidBack()")
+        check(page.locator("#modalGuide").is_hidden(), "indietro chiude la guida")
         page.click("#btnInfoTop")
         check(page.locator("#modalInfo").is_visible(), "finestra informazioni")
         check("Versione" in page.locator("#infoVersion").inner_text(), "mostra la versione")

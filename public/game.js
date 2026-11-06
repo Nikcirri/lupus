@@ -30,10 +30,9 @@ let dayTimerSeconds = DEFAULT_DAY_TIMER_SECONDS;
 let dayTimerInterval = null;
 let confirmCallback = null;
 let wakeLockSentinel = null;
-let isAppFullscreen = false;
 let pendingDeathPlayerId = null;
 
-// Funzioni del telefono (vibrazione, schermo intero, versione): arrivano da src/native.js.
+// Funzioni del telefono (vibrazione, tasto Indietro, versione): arrivano da src/native.js.
 // Nel browser (senza app) non esistono e si usano le alternative web.
 function nativeApp() {
   return window.LupusApp || null;
@@ -78,6 +77,11 @@ window.handleAndroidBack = function handleAndroidBack() {
 
   if (isOpen('modalConfirm')) { closeConfirmModal(); return true; }
   if (isOpen('modalDeathCause')) { closeDeathCauseModal(); return true; }
+  if (isOpen('modalVote')) { closeVoteModal(); return true; }
+  if (isOpen('modalSummary')) { closeSummaryModal(); return true; }
+  if (isOpen('modalGuide')) { closeGuideModal(); return true; }
+  if (isOpen('modalShareRoles')) { closeShareRolesModal(); return true; }
+  if (isOpen('modalImportRoles')) { closeImportRolesModal(); return true; }
   if (isOpen('modalRoleForm')) { closeRoleFormModal(); return true; }
   if (isOpen('modalInfo')) { closeInfoModal(); return true; }
   if (isOpen('modalGameMenu')) { closeGameMenuModal(); return true; }
@@ -87,8 +91,8 @@ window.handleAndroidBack = function handleAndroidBack() {
 
   if (isOpen('screenDistribution')) {
     // Se un ruolo è scoperto, lo copre di nuovo (senza passare al giocatore successivo).
-    if (document.getElementById('distStepReveal').style.display !== 'none') {
-      renderDistributionStep();
+    if (document.getElementById('distStepReveal').classList.contains('visible')) {
+      hideDistRole();
       return true;
     }
     confirmLeaveApp();
@@ -138,25 +142,6 @@ async function requestScreenWakeLock() {
   } catch (err) {
     // Gestione silenziosa degli errori come richiesto
   }
-}
-
-function toggleFullScreen() {
-  const app = nativeApp();
-  if (app && app.isNative && app.setFullscreen) {
-    // Nell'app Android: nasconde/mostra la barra di stato e quella di navigazione.
-    isAppFullscreen = !isAppFullscreen;
-    app.setFullscreen(isAppFullscreen);
-    return;
-  }
-  try {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      }
-    }
-  } catch (e) {}
 }
 
 function loadAllFromStorage() {
@@ -317,6 +302,8 @@ function showScreen(screenId) {
   const isNarrator = (screenId === 'screenNarrator');
   document.getElementById('btnAntiAmnesiaTop').style.display = isNarrator ? 'inline-flex' : 'none';
   document.getElementById('btnSettingsTop').style.display = isNarrator ? 'inline-flex' : 'none';
+  document.getElementById('btnUndoTop').style.display = isNarrator ? 'inline-flex' : 'none';
+  document.getElementById('headerIcon').style.display = isNarrator ? 'none' : 'inline';
   document.getElementById('btnInfoTop').style.display = (screenId === 'screenSetup') ? 'inline-flex' : 'none';
   if (screenId !== 'screenNarrator') document.getElementById('headerTitle').textContent = 'Lupus';
 
@@ -885,46 +872,28 @@ function renderDistributionStep() {
   const idx = activeMatch.distIndex;
 
   const coverEl = document.getElementById('distStepCover');
-  const revealEl = document.getElementById('distStepReveal');
   const completeEl = document.getElementById('distStepComplete');
+  document.getElementById('distStepReveal').classList.remove('visible');
+  distRoleSeen = false;
 
   if (idx >= total) {
     coverEl.style.display = 'none';
-    revealEl.style.display = 'none';
     completeEl.style.display = 'flex';
     return;
   }
 
   const player = activeMatch.players[idx];
   coverEl.style.display = 'flex';
-  revealEl.style.display = 'none';
   completeEl.style.display = 'none';
 
   document.getElementById('distProgressBadge').textContent = `Giocatore ${idx + 1} di ${total}`;
   document.getElementById('distPlayerNameCover').textContent = player.name;
-  document.getElementById('btnRevealRole').textContent = `👁️ Sono ${player.name}, mostra il mio ruolo`;
-}
-
-function revealCurrentPlayerRole() {
-  const player = activeMatch.players[activeMatch.distIndex];
-  const role = getRoleById(player.roleId);
-
-  document.getElementById('distStepCover').style.display = 'none';
-  document.getElementById('distStepReveal').style.display = 'flex';
-
-  document.getElementById('distPlayerNameReveal').textContent = player.name;
-  document.getElementById('distRoleIcon').textContent = role.icon;
-  document.getElementById('distRoleName').textContent = role.name;
-
-  const factionBadge = document.getElementById('distRoleFaction');
-  factionBadge.textContent = role.faction;
-  factionBadge.className = 'badge ' + getFactionBadgeClass(role.faction);
-
-  document.getElementById('distRoleWhat').textContent = role.whatYouDo;
-  document.getElementById('distRoleWin').textContent = role.howYouWin;
+  document.getElementById('btnRevealRole').textContent = `👆 ${player.name}, tieni premuto qui per vedere il tuo ruolo`;
+  updateDistNextButton();
 }
 
 function nextDistributionPlayer() {
+  if (!distRoleSeen) return;
   activeMatch.distIndex++;
   saveMatchToStorage();
   renderDistributionStep();
@@ -987,6 +956,11 @@ function renderNarratorDashboard() {
     btnPhase.textContent = `🌙 Vai alla Notte ${turn + 1}`;
     btnPhase.className = 'btn btn-primary';
   }
+
+  // Pulsante ↩️ in alto: attivo solo se c'è una fase precedente a cui tornare
+  const undoBtn = document.getElementById('btnUndoTop');
+  undoBtn.disabled = !activeMatch.undo;
+  undoBtn.title = activeMatch.undo ? `Torna a: ${getPhaseLabel(activeMatch.undo)}` : 'Nessuna fase precedente';
 
   // Contatori vivi: Lupi (Branco) vs Altri
   const { aliveWolves, aliveOthers } = getAliveCounts();
@@ -1054,9 +1028,12 @@ function toggleTurnPhase() {
   stopDayTimer();
 
   // Copia della fase attuale, per poter tornare indietro se il pulsante è stato toccato per sbaglio.
+  // Si tengono le ultime fasi (UNDO_MAX_STEPS), così ↩️ si può premere più volte di fila.
   const snapshot = JSON.parse(JSON.stringify(activeMatch));
-  delete snapshot.undo;
+  trimUndoChain(snapshot, UNDO_MAX_STEPS - 1);
   activeMatch.undo = snapshot;
+
+  activeMatch.vote = null;
 
   if (activeMatch.phase === 'night') {
     // Passa da NOTTE a GIORNO dello stesso turno
@@ -1066,6 +1043,8 @@ function toggleTurnPhase() {
   } else {
     // Passa da GIORNO a una nuova NOTTE:
     // Pulisce i badge temporanei (🐺, 🌸, 👁️, 📌) e trasforma 🛡️ in "🛡️ Ieri"
+    // Prima di pulire i segnalini, li salva nella cronologia della partita (riepilogo finale).
+    recordNightLog();
     activeMatch.turn += 1;
     activeMatch.phase = 'night';
     activeMatch.completedSteps = [];
@@ -1084,8 +1063,16 @@ function toggleTurnPhase() {
   renderNarratorDashboard();
   window.scrollTo({ top: 0, behavior: 'smooth' });
   showToast(activeMatch.phase === 'day'
-    ? `☀️ Giorno ${activeMatch.turn}. Se hai sbagliato: ⚙️ → Torna alla fase precedente.`
-    : `🌙 Notte ${activeMatch.turn}. Se hai sbagliato: ⚙️ → Torna alla fase precedente.`);
+    ? `☀️ Giorno ${activeMatch.turn}. Se hai sbagliato, tocca ↩️ in alto.`
+    : `🌙 Notte ${activeMatch.turn}. Se hai sbagliato, tocca ↩️ in alto.`);
+}
+
+const UNDO_MAX_STEPS = 6;
+
+function trimUndoChain(match, keep) {
+  let node = match;
+  for (let i = 0; i < keep && node && node.undo; i++) node = node.undo;
+  if (node) delete node.undo;
 }
 
 function getPhaseLabel(match) {
@@ -1102,7 +1089,6 @@ function undoPhaseChange() {
       stopDayTimer();
       activeMatch = previous;
       saveMatchToStorage();
-      closeGameMenuModal();
       renderNarratorDashboard();
       showToast(`↩️ Sei tornato a: ${getPhaseLabel(activeMatch)}`);
     },
@@ -1396,8 +1382,9 @@ function renderDayScaletta() {
     <div class="scaletta-step">
       <div class="scaletta-role-name">4. 🔥 Condanna al Rogo</div>
       <div class="scaletta-note">
-        Quando il villaggio brucia qualcuno, premi <strong>❌</strong> sulla sua riga e scegli <strong>"Bruciato al rogo"</strong>: stanotte il Medium saprà se era un lupo.
+        Apri la votazione e segna chi vota chi: l'app conta i voti (Sindaco doppio, Fantasma compreso) e gestisce i pareggi. Oppure premi <strong>❌</strong> sulla riga del condannato e scegli <strong>"Bruciato al rogo"</strong>.
       </div>
+      ${burnedToday ? '' : `<button class="btn btn-warning" onclick="openVoteModal()">🗳️ Apri la votazione</button>`}
       ${burnedToday
         ? `<div class="scaletta-highlight">🔥 Bruciato al rogo oggi: <strong>${escapeHtml(burnedToday.name)}</strong> (${escapeHtml(getRoleById(burnedToday.roleId).icon)} ${escapeHtml(getRoleById(burnedToday.roleId).name)})</div>`
         : ''}
@@ -1624,6 +1611,7 @@ function killPlayer(p, cause) {
   p.isDead = true;
   p.deathCause = cause;
   p.diedOnTurn = activeMatch.turn;
+  p.diedInPhase = cause === 'notte' ? 'night' : cause === 'rogo' ? 'day' : activeMatch.phase;
 
   // Riattiva controllo banner vittoria a ogni nuova eliminazione
   activeMatch.victoryDismissed = false;
@@ -1650,6 +1638,7 @@ function revivePlayer(p) {
   p.isGhost = false;
   p.deathCause = null;
   p.diedOnTurn = null;
+  p.diedInPhase = null;
   if (activeMatch.lastBurnedPlayerId === p.id) {
     activeMatch.lastBurnedPlayerId = null;
   }
@@ -1668,6 +1657,7 @@ function togglePlayerGhost(playerId) {
     p.isDead = true;
     p.deathCause = p.deathCause || 'altro';
     p.diedOnTurn = p.diedOnTurn || activeMatch.turn;
+    p.diedInPhase = p.diedInPhase || activeMatch.phase;
     activeMatch.victoryDismissed = false;
   }
   saveMatchToStorage();
@@ -1706,39 +1696,18 @@ function openAntiAmnesiaForPlayer(playerId) {
   currentAntiAmnesiaPlayerId = playerId;
   document.getElementById('modalAntiAmnesiaSelect').classList.remove('active');
 
-  // Configura Step 1 di sicurezza (copertura anti-spoiler)
+  // Schermata coperta: il ruolo si vede solo tenendo premuto il pulsante
   document.getElementById('aaCoverPlayerName').textContent = p.name;
-  document.getElementById('aaBtnPlayerName').textContent = p.name;
-  document.getElementById('aaStepCover').style.display = 'flex';
-  document.getElementById('aaStepCard').style.display = 'none';
+  document.getElementById('btnAaReveal').textContent = `👆 ${p.name}, tieni premuto qui per vedere il tuo ruolo`;
+  document.getElementById('aaStepCard').classList.remove('visible');
 
   document.getElementById('modalAntiAmnesiaSafeView').classList.add('active');
-}
-
-function revealAntiAmnesiaCard() {
-  if (!currentAntiAmnesiaPlayerId || !activeMatch) return;
-  const p = activeMatch.players.find(item => item.id === currentAntiAmnesiaPlayerId);
-  if (!p) return;
-
-  const role = getRoleById(p.roleId);
-  document.getElementById('aaStepCover').style.display = 'none';
-  document.getElementById('aaStepCard').style.display = 'flex';
-
-  document.getElementById('aaCardPlayerName').textContent = p.name;
-  document.getElementById('aaRoleIcon').textContent = role.icon;
-  document.getElementById('aaRoleName').textContent = role.name;
-
-  const factionBadge = document.getElementById('aaRoleFaction');
-  factionBadge.textContent = role.faction;
-  factionBadge.className = 'badge ' + getFactionBadgeClass(role.faction);
-
-  document.getElementById('aaRoleWhat').textContent = role.whatYouDo;
-  document.getElementById('aaRoleWin').textContent = role.howYouWin;
 }
 
 function closeAntiAmnesiaModal() {
   document.getElementById('modalAntiAmnesiaSelect').classList.remove('active');
   document.getElementById('modalAntiAmnesiaSafeView').classList.remove('active');
+  document.getElementById('aaStepCard').classList.remove('visible');
   currentAntiAmnesiaPlayerId = null;
 }
 
@@ -1748,13 +1717,6 @@ function closeAntiAmnesiaModal() {
 function openGameMenuModal() {
   if (activeMatch) {
     document.getElementById('toggleGhostRuleInGame').checked = !!activeMatch.ghostRule;
-    const undoBtn = document.getElementById('btnUndoPhase');
-    if (activeMatch.undo) {
-      undoBtn.style.display = 'inline-flex';
-      undoBtn.textContent = `↩️ Torna alla fase precedente (${getPhaseLabel(activeMatch.undo)})`;
-    } else {
-      undoBtn.style.display = 'none';
-    }
   }
   document.getElementById('menuVersionLabel').textContent = `Lupus v${getAppVersion()}`;
   document.getElementById('modalGameMenu').classList.add('active');
@@ -1972,4 +1934,541 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+/* =========================================================================
+   17. VOTAZIONE AL ROGO
+   Ogni votante sceglie chi vuole al rogo; il Sindaco vale 2, il Fantasma vota.
+   I voti restano salvati nella partita (activeMatch.vote) fino al cambio di fase.
+========================================================================= */
+function getCurrentVote() {
+  if (!activeMatch) return null;
+  if (!activeMatch.vote || activeMatch.vote.turn !== activeMatch.turn) {
+    activeMatch.vote = { turn: activeMatch.turn, round: 1, candidates: null, votes: {} };
+  }
+  return activeMatch.vote;
+}
+
+function openVoteModal() {
+  if (!activeMatch || activeMatch.phase !== 'day') return;
+  getCurrentVote();
+  renderVoteVoters();
+  renderVoteTally();
+  document.getElementById('modalVote').classList.add('active');
+}
+
+function closeVoteModal() {
+  document.getElementById('modalVote').classList.remove('active');
+}
+
+function getVoteCandidates(vote) {
+  const alive = activeMatch.players.filter(p => !p.isDead);
+  if (!vote.candidates) return alive;
+  return alive.filter(p => vote.candidates.includes(p.id));
+}
+
+function renderVoteVoters() {
+  const vote = getCurrentVote();
+  const candidates = getVoteCandidates(vote);
+  document.getElementById('voteTitle').textContent =
+    `🗳️ Votazione al rogo • Giorno ${activeMatch.turn}${vote.round > 1 ? ' • Ballottaggio' : ''}`;
+
+  const container = document.getElementById('voteVotersList');
+  container.innerHTML = '';
+  // Niente icone dei ruoli: la finestra può essere mostrata al tavolo senza svelare nulla.
+  getVoters(activeMatch.players).forEach(voter => {
+    const weight = voteWeight(voter, findRoleOrNull(voter.roleId));
+    const tags = [];
+    if (weight === 2) tags.push('<span class="badge badge-alleato">🎖️ vale 2</span>');
+    if (voter.isGhost) tags.push('<span class="badge badge-solitario">👻 Fantasma</span>');
+    const current = vote.votes[voter.id] || '';
+    const options = candidates.map(c =>
+      `<option value="${c.id}" ${current === c.id ? 'selected' : ''}>${escapeHtml(c.name)}${c.id === voter.id ? ' (sé stesso)' : ''}</option>`
+    ).join('');
+    const row = document.createElement('div');
+    row.className = 'vote-row';
+    row.innerHTML = `
+      <div class="vote-voter">
+        <strong>${escapeHtml(voter.name)}</strong>
+        ${tags.join('')}
+      </div>
+      <select class="select-field vote-select" onchange="setVote('${voter.id}', this.value)">
+        <option value="">— non ha votato —</option>
+        ${options}
+      </select>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function setVote(voterId, targetId) {
+  const vote = getCurrentVote();
+  if (targetId) vote.votes[voterId] = targetId;
+  else delete vote.votes[voterId];
+  saveMatchToStorage();
+  renderVoteTally();
+}
+
+function renderVoteTally() {
+  const vote = getCurrentVote();
+  const tally = tallyVotes(activeMatch.players, vote.votes, findRoleOrNull, vote.candidates);
+  const nameOf = id => (activeMatch.players.find(p => p.id === id) || { name: '?' }).name;
+
+  document.getElementById('voteProgress').textContent = `Hanno votato ${tally.castCount} su ${tally.voterCount}`;
+
+  const rows = tally.totals.filter(r => r.votes > 0 || vote.candidates);
+  document.getElementById('voteTally').innerHTML = rows.length
+    ? rows.map(r => {
+        const isLeader = tally.leaders.includes(r.playerId);
+        const width = tally.maxVotes ? Math.round((r.votes / tally.maxVotes) * 100) : 0;
+        return `
+          <div class="tally-row${isLeader ? ' tally-leader' : ''}">
+            <div class="tally-bar" style="width: ${width}%;"></div>
+            <span class="tally-name">${isLeader ? '🔥 ' : ''}${escapeHtml(r.name)}</span>
+            <span class="tally-votes">${r.votes} ${r.votes === 1 ? 'voto' : 'voti'}</span>
+          </div>`;
+      }).join('')
+    : '<div class="card-subtitle">Nessun voto ancora: scegli per ogni giocatore chi vuole mandare al rogo.</div>';
+
+  const actions = document.getElementById('voteActions');
+  if (tally.leaders.length === 1) {
+    const leaderId = tally.leaders[0];
+    actions.innerHTML = `<button class="btn btn-warning" onclick="burnFromVote('${leaderId}')">🔥 Brucia ${escapeHtml(nameOf(leaderId))} (${tally.maxVotes} ${tally.maxVotes === 1 ? 'voto' : 'voti'})</button>`;
+  } else if (tally.leaders.length > 1) {
+    const names = tally.leaders.map(nameOf);
+    actions.innerHTML = `
+      <div class="scaletta-highlight">⚖️ Pareggio tra <strong>${escapeHtml(names.join(', '))}</strong> con ${tally.maxVotes} voti.</div>
+      <button class="btn btn-primary" onclick="startRunoff()">⚖️ Ballottaggio tra ${escapeHtml(names.join(' e '))}</button>`;
+  } else {
+    actions.innerHTML = '';
+  }
+  document.getElementById('btnVoteRestart').style.display = vote.round > 1 ? 'inline-flex' : 'none';
+}
+
+function startRunoff() {
+  const vote = getCurrentVote();
+  const tally = tallyVotes(activeMatch.players, vote.votes, findRoleOrNull, vote.candidates);
+  if (tally.leaders.length < 2) return;
+  vote.candidates = tally.leaders.slice();
+  vote.votes = {};
+  vote.round += 1;
+  saveMatchToStorage();
+  renderVoteVoters();
+  renderVoteTally();
+  document.querySelector('#modalVote .modal-box').scrollTop = 0;
+  showToast('⚖️ Ballottaggio: si vota di nuovo solo tra i giocatori in pareggio.');
+}
+
+function resetVotes() {
+  const vote = getCurrentVote();
+  vote.votes = {};
+  saveMatchToStorage();
+  renderVoteVoters();
+  renderVoteTally();
+}
+
+function restartVoteFromScratch() {
+  activeMatch.vote = null;
+  getCurrentVote();
+  saveMatchToStorage();
+  renderVoteVoters();
+  renderVoteTally();
+}
+
+function burnFromVote(playerId) {
+  const p = activeMatch.players.find(item => item.id === playerId);
+  if (!p || p.isDead) return;
+  openConfirmModal(
+    '🔥 Condanna al rogo',
+    `Il villaggio manda al rogo ${p.name}. Confermi?`,
+    () => {
+      closeVoteModal();
+      killPlayer(p, 'rogo');
+    },
+    { yesLabel: '🔥 Brucia', yesClass: 'btn-warning' }
+  );
+}
+
+/* =========================================================================
+   18. RIEPILOGO DELLA PARTITA (RUOLI SVELATI E CRONOLOGIA)
+========================================================================= */
+function currentNightMarkers() {
+  const ids = field => activeMatch.players.filter(p => p[field]).map(p => p.id);
+  return {
+    turn: activeMatch.turn,
+    wolfTargets: ids('wolfTarget'),
+    shielded: ids('shieldTonight'),
+    probed: ids('seerProbed'),
+    flowers: ids('flowerTonight')
+  };
+}
+
+function recordNightLog() {
+  const logs = (activeMatch.nightLogs || []).filter(l => l.turn !== activeMatch.turn);
+  logs.push(currentNightMarkers());
+  activeMatch.nightLogs = logs;
+}
+
+function openSummaryModal() {
+  if (!activeMatch) return;
+  closeGameMenuModal();
+
+  // Cronologia: notti già salvate + i segnalini della notte in corso
+  const logs = (activeMatch.nightLogs || []).filter(l => l.turn !== activeMatch.turn);
+  logs.push(currentNightMarkers());
+  const timeline = buildTimeline(activeMatch.players, logs, findRoleOrNull);
+
+  const win = evaluateVictoryCondition();
+  document.getElementById('summaryWinner').innerHTML = win
+    ? `<div class="victory-title">${escapeHtml(win.text)}</div>`
+    : `<div class="card-subtitle">Partita ancora in corso: ${escapeHtml(getPhaseLabel(activeMatch))}.</div>`;
+
+  const factions = ['Branco', 'Alleato dei Lupi', 'Solitario', 'Villaggio'];
+  const groups = factions.map(faction => {
+    const members = activeMatch.players.filter(p => getRoleById(p.roleId).faction === faction);
+    if (!members.length) return '';
+    const rows = members.map(p => {
+      const role = getRoleById(p.roleId);
+      const wasCopione = p.originalRoleId !== p.roleId ? ` <span class="card-subtitle">(era ${escapeHtml(getRoleById(p.originalRoleId).name)})</span>` : '';
+      const status = p.isGhost ? '👻' : p.isDead ? '💀' : '🟢';
+      const when = describeDeath(p);
+      return `<div class="summary-player">${status} <strong>${escapeHtml(p.name)}</strong> — ${escapeHtml(role.icon)} ${escapeHtml(role.name)}${wasCopione}${when ? ` <span class="card-subtitle">• ${escapeHtml(when)}</span>` : ''}</div>`;
+    }).join('');
+    return `<div class="summary-group"><span class="badge ${getFactionBadgeClass(faction)}">${escapeHtml(faction)}</span>${rows}</div>`;
+  }).join('');
+  document.getElementById('summaryRoles').innerHTML = groups;
+
+  document.getElementById('summaryTimeline').innerHTML = timeline.length
+    ? timeline.map(e => `
+        <div class="summary-turn ${e.phase === 'night' ? 'summary-night' : 'summary-day'}">
+          <div class="summary-turn-title">${escapeHtml(e.title)}</div>
+          ${e.lines.map(l => `<div>${escapeHtml(l)}</div>`).join('')}
+        </div>`).join('')
+    : '<div class="card-subtitle">Ancora niente da raccontare: usa i segnalini 🐺 🛡️ 👁️ 🌸 e ❌ durante la partita.</div>';
+
+  document.getElementById('modalSummary').classList.add('active');
+  document.querySelector('#modalSummary .modal-box').scrollTop = 0;
+}
+
+function closeSummaryModal() {
+  document.getElementById('modalSummary').classList.remove('active');
+}
+
+/* =========================================================================
+   19. RUOLO VISIBILE SOLO CON IL DITO PREMUTO
+   Il ruolo compare finché il giocatore tiene premuto il pulsante e sparisce appena alza il dito.
+========================================================================= */
+let distRoleSeen = false;
+
+function setupHoldToReveal(button, show, hide) {
+  let active = false;
+  const start = e => {
+    if (active) return;
+    if (e && e.preventDefault) e.preventDefault();
+    active = true;
+    if (e && e.pointerId !== undefined) {
+      try { button.setPointerCapture(e.pointerId); } catch (err) {}
+    }
+    show();
+  };
+  const end = () => {
+    if (!active) return;
+    active = false;
+    hide();
+  };
+  button.addEventListener('pointerdown', start);
+  button.addEventListener('pointerup', end);
+  button.addEventListener('pointercancel', end);
+  button.addEventListener('lostpointercapture', end);
+  button.addEventListener('contextmenu', e => e.preventDefault());
+  // Tastiera (accessibilità): Spazio o Invio tenuti premuti
+  button.addEventListener('keydown', e => {
+    if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) start(e);
+  });
+  button.addEventListener('keyup', e => {
+    if (e.key === ' ' || e.key === 'Enter') end();
+  });
+  // Se l'app va in secondo piano mentre il ruolo è visibile, lo nasconde.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') end();
+  });
+}
+
+function fillRoleCard(prefix, player) {
+  const role = getRoleById(player.roleId);
+  document.getElementById(prefix + 'PlayerName').textContent = player.name;
+  document.getElementById(prefix + 'RoleIcon').textContent = role.icon;
+  document.getElementById(prefix + 'RoleName').textContent = role.name;
+  const factionBadge = document.getElementById(prefix + 'RoleFaction');
+  factionBadge.textContent = role.faction;
+  factionBadge.className = 'badge ' + getFactionBadgeClass(role.faction);
+  document.getElementById(prefix + 'RoleWhat').textContent = role.whatYouDo;
+  document.getElementById(prefix + 'RoleWin').textContent = role.howYouWin;
+}
+
+function showDistRole() {
+  if (!activeMatch || activeMatch.distIndex >= activeMatch.players.length) return;
+  fillRoleCard('dist', activeMatch.players[activeMatch.distIndex]);
+  document.getElementById('distStepReveal').classList.add('visible');
+  vibrate('short');
+}
+
+function hideDistRole() {
+  const overlay = document.getElementById('distStepReveal');
+  if (!overlay.classList.contains('visible')) return;
+  overlay.classList.remove('visible');
+  distRoleSeen = true;
+  updateDistNextButton();
+}
+
+function updateDistNextButton() {
+  if (!activeMatch) return;
+  const btn = document.getElementById('btnDistNext');
+  const nextPlayer = activeMatch.players[activeMatch.distIndex + 1];
+  btn.disabled = !distRoleSeen;
+  btn.textContent = distRoleSeen
+    ? (nextPlayer ? `✅ Ho visto: passa il telefono a ${nextPlayer.name}` : '✅ Ho visto: riconsegna al Narratore')
+    : '✅ Ho visto (prima tieni premuto qui sopra)';
+}
+
+function showAntiAmnesiaRole() {
+  if (!currentAntiAmnesiaPlayerId || !activeMatch) return;
+  const p = activeMatch.players.find(item => item.id === currentAntiAmnesiaPlayerId);
+  if (!p) return;
+  fillRoleCard('aa', p);
+  document.getElementById('aaStepCard').classList.add('visible');
+  vibrate('short');
+}
+
+function hideAntiAmnesiaRole() {
+  document.getElementById('aaStepCard').classList.remove('visible');
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  setupHoldToReveal(document.getElementById('btnRevealRole'), showDistRole, hideDistRole);
+  setupHoldToReveal(document.getElementById('btnAaReveal'), showAntiAmnesiaRole, hideAntiAmnesiaRole);
+});
+
+/* =========================================================================
+   20. GUIDA DEI RUOLI E DELLE REGOLE
+========================================================================= */
+function openGuideModal() {
+  closeGameMenuModal();
+  const filter = document.getElementById('guideOnlyDeck');
+  const deckIds = getGuideDeckRoleIds();
+  document.getElementById('guideFilterRow').style.display = deckIds.size ? 'flex' : 'none';
+  if (!deckIds.size) filter.checked = false;
+  renderGuide();
+  document.getElementById('modalGuide').classList.add('active');
+  document.querySelector('#modalGuide .modal-box').scrollTop = 0;
+}
+
+function closeGuideModal() {
+  document.getElementById('modalGuide').classList.remove('active');
+}
+
+// Ruoli del mazzo attuale (partita in corso oppure mazzo scelto nel setup)
+function getGuideDeckRoleIds() {
+  const deck = activeMatch ? activeMatch.initialDeckMap : appSettings.selectedDeck;
+  const ids = new Set(Object.keys(deck || {}).filter(id => deck[id] > 0));
+  if (activeMatch) activeMatch.players.forEach(p => ids.add(p.roleId));
+  return ids;
+}
+
+function renderGuide() {
+  const onlyDeck = document.getElementById('guideOnlyDeck').checked;
+  const deckIds = getGuideDeckRoleIds();
+  const roles = onlyDeck ? rolesDB.filter(r => deckIds.has(r.id)) : rolesDB;
+  const ghostOn = activeMatch ? !!activeMatch.ghostRule : !!appSettings.ghostRule;
+
+  const wakeLabels = {
+    mai: 'non si sveglia di notte',
+    ogni_notte: 'si sveglia ogni notte',
+    solo_notte_1: 'si sveglia solo la prima notte',
+    solo_notte_2: 'si sveglia solo la seconda notte',
+    dalla_notte_2: 'si sveglia dalla seconda notte in poi'
+  };
+  const factionIntro = {
+    'Villaggio': 'Vincono quando tutti i lupi sono stati eliminati.',
+    'Branco': 'Vincono quando sono tanti quanti gli altri giocatori vivi.',
+    'Alleato dei Lupi': 'Umani che tifano per i lupi: vincono se vince il branco.',
+    'Solitario': 'Giocano da soli, con un obiettivo tutto loro.'
+  };
+
+  document.getElementById('guideRoles').innerHTML = ['Villaggio', 'Branco', 'Alleato dei Lupi', 'Solitario'].map(faction => {
+    const list = roles.filter(r => r.faction === faction);
+    if (!list.length) return '';
+    return `
+      <div class="guide-faction">
+        <div class="guide-faction-head"><span class="badge ${getFactionBadgeClass(faction)}">${escapeHtml(faction)}</span>
+          <span class="card-subtitle">${escapeHtml(factionIntro[faction])}</span></div>
+        ${list.map(r => `
+          <div class="guide-role">
+            <div class="guide-role-name"><span class="guide-role-icon">${escapeHtml(r.icon)}</span> ${escapeHtml(r.name)}${r.isPair ? ' <span class="badge">👥 in coppia</span>' : ''}</div>
+            <div>${escapeHtml(r.whatYouDo)}</div>
+            <div class="card-subtitle">🏆 ${escapeHtml(r.howYouWin)} • 🌙 ${escapeHtml(wakeLabels[r.wakeTiming] || '')}</div>
+          </div>`).join('')}
+      </div>`;
+  }).join('') || '<div class="card-subtitle">Nessun ruolo da mostrare.</div>';
+
+  document.getElementById('guideGhostRule').style.display = ghostOn ? 'block' : 'none';
+}
+
+/* =========================================================================
+   21. CONDIVIDERE I RUOLI CON GLI AMICI
+   Il messaggio contiene un codice (LUPUS-RUOLI-1:...) che l'altro telefono incolla in "Importa ruoli".
+========================================================================= */
+let pendingImportRoles = null;
+let importIdCounter = 0;
+
+function openShareRolesModal() {
+  const container = document.getElementById('shareRolesList');
+  container.innerHTML = rolesDB.map(r => `
+    <label class="share-role-row">
+      <input type="checkbox" value="${escapeHtml(r.id)}" ${isRoleCustomized(r, DEFAULT_ROLES) ? 'checked' : ''} onchange="updateShareCount()">
+      <span>${escapeHtml(r.icon)} ${escapeHtml(r.name)}</span>
+      ${isRoleCustomized(r, DEFAULT_ROLES) ? '<span class="badge badge-alleato">tuo</span>' : ''}
+    </label>`).join('');
+  updateShareCount();
+  document.getElementById('modalShareRoles').classList.add('active');
+}
+
+function closeShareRolesModal() {
+  document.getElementById('modalShareRoles').classList.remove('active');
+}
+
+function getSelectedShareRoles() {
+  const ids = Array.from(document.querySelectorAll('#shareRolesList input:checked')).map(i => i.value);
+  return rolesDB.filter(r => ids.includes(r.id));
+}
+
+function setAllShareRoles(checked) {
+  document.querySelectorAll('#shareRolesList input').forEach(i => { i.checked = checked; });
+  updateShareCount();
+}
+
+function updateShareCount() {
+  const n = getSelectedShareRoles().length;
+  const btn = document.getElementById('btnShareRolesSend');
+  btn.disabled = n === 0;
+  btn.textContent = n ? `📤 Condividi ${n} ${n === 1 ? 'ruolo' : 'ruoli'}` : '📤 Scegli almeno un ruolo';
+  document.getElementById('btnShareRolesCopy').disabled = n === 0;
+}
+
+function buildShareMessage(roles) {
+  const names = roles.map(r => `${r.icon} ${r.name}`).join(', ');
+  return `🐺 Ruoli per Lupus (${roles.length}): ${names}\n` +
+    `Per aggiungerli: apri Lupus → 🛠️ Gestisci / Crea Ruoli → 📥 Importa ruoli e incolla tutto questo messaggio.\n\n` +
+    encodeRolesShare(roles);
+}
+
+async function shareSelectedRoles() {
+  const roles = getSelectedShareRoles();
+  if (!roles.length) return;
+  const text = buildShareMessage(roles);
+  const app = nativeApp();
+  try {
+    if (app && app.isNative && app.share) {
+      await app.share(text);
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ title: 'Ruoli per Lupus', text });
+      return;
+    }
+  } catch (e) {
+    // Condivisione annullata o non disponibile: si prova a copiare.
+  }
+  await copySelectedRoles();
+}
+
+async function copySelectedRoles() {
+  const roles = getSelectedShareRoles();
+  if (!roles.length) return;
+  const ok = await copyText(buildShareMessage(roles));
+  showToast(ok ? '📋 Copiato! Incollalo in un messaggio per i tuoi amici.' : 'Non sono riuscito a copiare: usa "Condividi".', ok ? 'info' : 'warn');
+}
+
+async function copyText(text) {
+  const app = nativeApp();
+  try {
+    if (app && app.isNative && app.writeClipboard) {
+      await app.writeClipboard(text);
+      return true;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function openImportRolesModal() {
+  pendingImportRoles = null;
+  document.getElementById('importRolesText').value = '';
+  document.getElementById('importRolesPreview').innerHTML = '';
+  document.getElementById('btnImportRolesConfirm').style.display = 'none';
+  document.getElementById('modalImportRoles').classList.add('active');
+}
+
+function closeImportRolesModal() {
+  document.getElementById('modalImportRoles').classList.remove('active');
+  pendingImportRoles = null;
+}
+
+async function pasteImportRoles() {
+  const app = nativeApp();
+  let text = '';
+  try {
+    if (app && app.isNative && app.readClipboard) text = await app.readClipboard();
+    else if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText();
+  } catch (e) {}
+  if (!text) {
+    showToast('Non riesco a leggere gli appunti: tieni premuto nel riquadro e scegli Incolla.', 'warn');
+    return;
+  }
+  document.getElementById('importRolesText').value = text;
+  previewImportRoles();
+}
+
+function previewImportRoles() {
+  const preview = document.getElementById('importRolesPreview');
+  const confirmBtn = document.getElementById('btnImportRolesConfirm');
+  const text = document.getElementById('importRolesText').value;
+  pendingImportRoles = null;
+  confirmBtn.style.display = 'none';
+  if (!text.trim()) {
+    preview.innerHTML = '';
+    return;
+  }
+  const result = decodeRolesShare(text);
+  if (result.error) {
+    preview.innerHTML = `<div class="scaletta-dead-alert">⚠️ ${escapeHtml(result.error)}</div>`;
+    return;
+  }
+  pendingImportRoles = result.roles;
+  preview.innerHTML = result.roles.map(r => {
+    const exists = rolesDB.some(e => e.name.trim().toLowerCase() === r.name.trim().toLowerCase());
+    return `<div class="share-role-row">
+      <span>${escapeHtml(r.icon)} <strong>${escapeHtml(r.name)}</strong></span>
+      <span class="badge ${getFactionBadgeClass(r.faction)}">${escapeHtml(r.faction)}</span>
+      <span class="badge">${exists ? '♻️ aggiorna il tuo' : '➕ nuovo'}</span>
+    </div>`;
+  }).join('');
+  confirmBtn.style.display = 'inline-flex';
+  confirmBtn.textContent = `📥 Importa ${result.roles.length} ${result.roles.length === 1 ? 'ruolo' : 'ruoli'}`;
+}
+
+function confirmImportRoles() {
+  if (!pendingImportRoles || !pendingImportRoles.length) return;
+  const merged = mergeImportedRoles(rolesDB, pendingImportRoles, () => `custom_${Date.now()}_${++importIdCounter}`);
+  rolesDB = merged.roles;
+  saveRolesToStorage();
+  closeImportRolesModal();
+  renderEditorRolesList();
+  const parts = [];
+  if (merged.added) parts.push(`${merged.added} ${merged.added === 1 ? 'aggiunto' : 'aggiunti'}`);
+  if (merged.updated) parts.push(`${merged.updated} ${merged.updated === 1 ? 'aggiornato' : 'aggiornati'}`);
+  showToast(`📥 Ruoli importati: ${parts.join(', ')}.`);
 }

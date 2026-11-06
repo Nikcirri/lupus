@@ -1,5 +1,14 @@
 # Novità
 
+## [1.1.0] - 2026-11-06
+
+- Pulsante **↩️ Fase** in alto al posto dello schermo intero: torna alla fase precedente, anche più volte di fila (fino a 6 fasi).
+- Votazione al rogo: per ogni giocatore scegli chi vota, l'app conta i voti (Sindaco doppio, il Fantasma vota), riconosce i pareggi e fa il ballottaggio, poi "Brucia".
+- Riepilogo della partita: chi era chi e cronologia di ogni notte e giorno (scelte dei lupi, protezioni della Guardia, Veggente, fiori, morti). Dal banner di vittoria o da ⚙️.
+- Il ruolo si vede solo tenendo premuto il dito, sia nella distribuzione sia nell'anti-amnesia: niente sbirciate per sbaglio.
+- Guida di Lupus: come si gioca e tutti i ruoli spiegati, anche solo quelli della partita.
+- Condividi i tuoi ruoli con gli amici (WhatsApp, Telegram...) e importa quelli che ti mandano.
+
 ## [1.0.0] - 2026-11-06
 
 Prima versione come app Android, partendo dall'assistente del Narratore fatto con Gemini.

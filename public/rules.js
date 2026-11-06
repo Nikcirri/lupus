@@ -397,3 +397,203 @@ function shouldAutoCheck(lastCheckIso, now) {
   const last = new Date(lastCheckIso).getTime();
   return !Number.isFinite(last) || now.getTime() - last >= UPDATE_AUTO_CHECK_HOURS * 3600000;
 }
+
+/* =========================================================================
+   5. VOTAZIONE AL ROGO (FUNZIONI PURE)
+   Votano i vivi e il Fantasma; il Sindaco vivo vale 2 voti.
+========================================================================= */
+function isMayorRole(role) {
+  return !!role && (role.id === 'sindaco' || String(role.name || '').toLowerCase() === 'sindaco');
+}
+
+/** Chi può votare: i vivi e il Fantasma. */
+function getVoters(players) {
+  return (players || []).filter(p => !p.isDead || p.isGhost);
+}
+
+/** Quanto vale il voto di un giocatore (0 = non vota). */
+function voteWeight(player, role) {
+  if (player.isDead) return player.isGhost ? 1 : 0;
+  return isMayorRole(role) ? 2 : 1;
+}
+
+/**
+ * Conteggio dei voti.
+ * votes = { idVotante: idVotato } ('' o assente = non ha ancora votato / astenuto).
+ * candidateIds = elenco dei votabili (null = tutti i vivi).
+ * Restituisce { totals: [{playerId, name, votes}] in ordine decrescente, leaders: [id], maxVotes, castCount, voterCount }.
+ */
+function tallyVotes(players, votes, findRole, candidateIds) {
+  const list = players || [];
+  const allowed = new Set((candidateIds && candidateIds.length ? candidateIds : list.filter(p => !p.isDead).map(p => p.id)));
+  const totals = {};
+  list.forEach(p => { if (allowed.has(p.id)) totals[p.id] = 0; });
+  const voters = getVoters(list);
+  let castCount = 0;
+  voters.forEach(voter => {
+    const target = (votes || {})[voter.id];
+    if (!target || !(target in totals)) return;
+    totals[target] += voteWeight(voter, findRole(voter.roleId));
+    castCount++;
+  });
+  const rows = list
+    .filter(p => p.id in totals)
+    .map(p => ({ playerId: p.id, name: p.name, votes: totals[p.id] }))
+    .sort((a, b) => b.votes - a.votes);
+  const maxVotes = rows.length ? rows[0].votes : 0;
+  const leaders = maxVotes > 0 ? rows.filter(r => r.votes === maxVotes).map(r => r.playerId) : [];
+  return { totals: rows, leaders, maxVotes, castCount, voterCount: voters.length };
+}
+
+/* =========================================================================
+   6. CRONOLOGIA DELLA PARTITA (FUNZIONI PURE)
+   nightLogs = [{ turn, wolfTargets, shielded, probed, flowers }] (id dei giocatori)
+========================================================================= */
+function buildTimeline(players, nightLogs, findRole) {
+  const list = players || [];
+  const byId = id => list.find(p => p.id === id);
+  const nameOf = id => (byId(id) || { name: '?' }).name;
+  const roleLabel = p => {
+    const r = findRole(p.roleId);
+    return r ? `${r.icon} ${r.name}` : p.roleId;
+  };
+  const turns = new Set();
+  (nightLogs || []).forEach(l => turns.add(l.turn));
+  list.forEach(p => { if (p.isDead && p.diedOnTurn) turns.add(p.diedOnTurn); });
+
+  const entries = [];
+  Array.from(turns).sort((a, b) => a - b).forEach(turn => {
+    const log = (nightLogs || []).find(l => l.turn === turn);
+    const nightLines = [];
+    if (log) {
+      (log.wolfTargets || []).forEach(id => {
+        const p = byId(id);
+        const saved = (log.shielded || []).includes(id);
+        const hamster = p && isHamsterRole(findRole(p.roleId));
+        nightLines.push(`🐺 I lupi hanno scelto ${nameOf(id)}${saved ? ' (salvato dalla Guardia 🛡️)' : hamster ? ' (Criceto: immune)' : ''}`);
+      });
+      (log.shielded || []).filter(id => !(log.wolfTargets || []).includes(id))
+        .forEach(id => nightLines.push(`🛡️ La Guardia ha protetto ${nameOf(id)}`));
+      (log.probed || []).forEach(id => nightLines.push(`🔮 Il Veggente ha sondato ${nameOf(id)}`));
+      (log.flowers || []).forEach(id => nightLines.push(`🌸 Fiori davanti alla porta di ${nameOf(id)}`));
+    }
+    const dayLines = [];
+    list.filter(p => p.isDead && p.diedOnTurn === turn).forEach(p => {
+      const ghost = p.isGhost ? ' → 👻 Fantasma' : '';
+      if (p.deathCause === 'notte') nightLines.push(`💀 Morto stanotte: ${p.name} (${roleLabel(p)})${ghost}`);
+      else if (p.deathCause === 'rogo') dayLines.push(`🔥 Bruciato al rogo: ${p.name} (${roleLabel(p)})${ghost}`);
+      else if (p.diedInPhase === 'night') nightLines.push(`💀 Morto: ${p.name} (${roleLabel(p)})${ghost}`);
+      else dayLines.push(`💀 Morto: ${p.name} (${roleLabel(p)})${ghost}`);
+    });
+    if (nightLines.length) entries.push({ turn, phase: 'night', title: `🌙 Notte ${turn}`, lines: nightLines });
+    if (dayLines.length) entries.push({ turn, phase: 'day', title: `☀️ Giorno ${turn}`, lines: dayLines });
+  });
+  return entries;
+}
+
+/* =========================================================================
+   7. CONDIVIDERE I RUOLI CON GLI AMICI (FUNZIONI PURE)
+   Formato: "LUPUS-RUOLI-1:" seguito dai ruoli in JSON codificato in base64 (UTF-8).
+========================================================================= */
+const ROLES_SHARE_PREFIX = 'LUPUS-RUOLI-1:';
+const VALID_FACTIONS = ['Villaggio', 'Branco', 'Alleato dei Lupi', 'Solitario'];
+const VALID_WAKE_TIMINGS = ['mai', 'ogni_notte', 'solo_notte_1', 'solo_notte_2', 'dalla_notte_2'];
+
+function utf8ToBase64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin);
+}
+
+function base64ToUtf8(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function cleanText(value, max) {
+  return String(value == null ? '' : value).replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/** Ruolo importato ripulito e controllato, oppure null se non valido. */
+function sanitizeImportedRole(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  const name = cleanText(obj.name, 40);
+  const whatYouDo = cleanText(obj.whatYouDo, 400);
+  const howYouWin = cleanText(obj.howYouWin, 200);
+  if (!name || !whatYouDo || !howYouWin) return null;
+  const priority = Math.min(10, Math.max(1, parseInt(obj.priority, 10) || 5));
+  return {
+    id: typeof obj.id === 'string' && /^[a-z0-9_]{1,40}$/i.test(obj.id) ? obj.id : '',
+    name,
+    icon: Array.from(cleanText(obj.icon, 16)).slice(0, 8).join('') || '🎭',
+    faction: VALID_FACTIONS.includes(obj.faction) ? obj.faction : 'Villaggio',
+    whatYouDo,
+    howYouWin,
+    wakeTiming: VALID_WAKE_TIMINGS.includes(obj.wakeTiming) ? obj.wakeTiming : 'mai',
+    priority,
+    narratorPhrase: cleanText(obj.narratorPhrase, 300),
+    narratorNote: cleanText(obj.narratorNote, 300),
+    isPair: !!obj.isPair
+  };
+}
+
+function encodeRolesShare(roles) {
+  const payload = (roles || []).map(r => ({
+    id: r.id, name: r.name, icon: r.icon, faction: r.faction, whatYouDo: r.whatYouDo, howYouWin: r.howYouWin,
+    wakeTiming: r.wakeTiming, priority: r.priority, narratorPhrase: r.narratorPhrase || '', narratorNote: r.narratorNote || '', isPair: !!r.isPair
+  }));
+  return ROLES_SHARE_PREFIX + utf8ToBase64(JSON.stringify(payload));
+}
+
+/** Legge un messaggio condiviso (anche con altro testo intorno). Restituisce { roles } oppure { error }. */
+function decodeRolesShare(text) {
+  const raw = String(text || '');
+  const start = raw.indexOf(ROLES_SHARE_PREFIX);
+  if (start === -1) return { error: 'Non trovo un codice di ruoli di Lupus in questo testo.' };
+  // Solo il codice subito dopo il prefisso: il testo che segue (saluti, firme) viene ignorato.
+  const match = /^\s*([A-Za-z0-9+/]+={0,2})/.exec(raw.slice(start + ROLES_SHARE_PREFIX.length));
+  const code = match ? match[1] : '';
+  let data;
+  try {
+    data = JSON.parse(base64ToUtf8(code));
+  } catch (e) {
+    return { error: 'Il codice è incompleto o rovinato: fatti rimandare il messaggio intero.' };
+  }
+  if (!Array.isArray(data)) return { error: 'Il codice non contiene ruoli.' };
+  const roles = data.map(sanitizeImportedRole).filter(Boolean).slice(0, 60);
+  if (!roles.length) return { error: 'Il codice non contiene ruoli validi.' };
+  return { roles };
+}
+
+/** Ruoli da proporre nella condivisione: quelli creati o modificati rispetto ai 13 base. */
+function isRoleCustomized(role, defaults) {
+  const base = (defaults || []).find(d => d.id === role.id);
+  if (!base) return true;
+  return ['name', 'icon', 'faction', 'whatYouDo', 'howYouWin', 'wakeTiming', 'priority', 'narratorPhrase', 'narratorNote', 'isPair']
+    .some(k => String(base[k] == null ? '' : base[k]) !== String(role[k] == null ? '' : role[k]));
+}
+
+/**
+ * Unisce i ruoli importati a quelli esistenti: stesso nome = aggiorna, altrimenti aggiunge.
+ * makeId() crea l'id dei ruoli nuovi. Restituisce { roles, added, updated }.
+ */
+function mergeImportedRoles(existing, imported, makeId) {
+  const roles = (existing || []).map(r => ({ ...r }));
+  let added = 0;
+  let updated = 0;
+  (imported || []).forEach(imp => {
+    const idx = roles.findIndex(r => r.name.trim().toLowerCase() === imp.name.trim().toLowerCase());
+    if (idx !== -1) {
+      roles[idx] = { ...imp, id: roles[idx].id };
+      updated++;
+    } else {
+      const sameId = imp.id && roles.some(r => r.id === imp.id);
+      roles.push({ ...imp, id: !imp.id || sameId ? makeId() : imp.id });
+      added++;
+    }
+  });
+  return { roles, added, updated };
+}

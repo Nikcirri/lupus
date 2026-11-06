@@ -3,6 +3,8 @@
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { Haptics } from '@capacitor/haptics';
+import { Share } from '@capacitor/share';
+import { Clipboard } from '@capacitor/clipboard';
 
 const isNative = Capacitor.isNativePlatform();
 
@@ -24,15 +26,20 @@ window.LupusApp = {
     }
   },
 
-  /** Schermo intero: nasconde (o mostra) la barra di stato e quella di navigazione. */
-  async setFullscreen(on) {
-    if (!isNative) return;
-    try {
-      if (on) await SystemBars.hide();
-      else await SystemBars.show();
-    } catch {
-      // Non disponibile su questo telefono.
-    }
+  /** Apre il menu "Condividi" del telefono (WhatsApp, Telegram, email...). */
+  async share(text) {
+    await Share.share({ title: 'Ruoli per Lupus', text, dialogTitle: 'Condividi i ruoli' });
+  },
+
+  /** Copia un testo negli appunti. */
+  async writeClipboard(text) {
+    await Clipboard.write({ string: text });
+  },
+
+  /** Legge il testo copiato negli appunti ('' se non c'è). */
+  async readClipboard() {
+    const { value } = await Clipboard.read();
+    return typeof value === 'string' ? value : '';
   },
 
   /** Manda l'app in secondo piano (come il tasto Home): la partita resta salvata. */

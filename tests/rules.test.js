@@ -5,10 +5,10 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const code = readFileSync(new URL('../public/rules.js', import.meta.url), 'utf8');
-const ctx = vm.createContext({});
+const ctx = vm.createContext({ TextEncoder, TextDecoder, btoa, atob });
 vm.runInContext(
   code +
-    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, computeNightOutcome, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck };',
+    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, computeNightOutcome, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles };',
   ctx
 );
 const R = ctx.R;
@@ -119,4 +119,88 @@ test('versioni e aggiornamenti', () => {
   assert.equal(R.shouldAutoCheck(null, now), true);
   assert.equal(R.shouldAutoCheck('2026-11-06T01:00:00Z', now), false);
   assert.equal(R.shouldAutoCheck('2026-11-05T11:00:00Z', now), true);
+});
+
+test('votazione: Sindaco vale 2, il Fantasma vota, i morti no', () => {
+  const players = [
+    player('a', 'lupo'),
+    player('b', 'sindaco'),
+    player('c', 'contadino'),
+    player('d', 'veggente', { isDead: true, isGhost: true }),
+    player('e', 'guardia', { isDead: true })
+  ];
+  assert.deepEqual([...R.getVoters(players)].map(p => p.id), ['a', 'b', 'c', 'd']);
+  const t = R.tallyVotes(players, { a: 'c', b: 'a', c: 'a', d: 'c', e: 'c' }, findRole, null);
+  assert.deepEqual([...t.totals].map(r => `${r.playerId}=${r.votes}`), ['a=3', 'c=2', 'b=0']);
+  assert.deepEqual([...t.leaders], ['a']);
+  assert.equal(t.castCount, 4);
+  assert.equal(t.voterCount, 4);
+  // il morto non può essere votato né votare
+  assert.ok(![...t.totals].some(r => r.playerId === 'd' || r.playerId === 'e'));
+});
+
+test('votazione: pareggio e ballottaggio', () => {
+  const players = [player('a', 'lupo'), player('b', 'contadino'), player('c', 'contadino'), player('d', 'contadino')];
+  const tie = R.tallyVotes(players, { a: 'b', b: 'a', c: 'a', d: 'b' }, findRole, null);
+  assert.deepEqual([...tie.leaders].sort(), ['a', 'b']);
+  // al ballottaggio contano solo i voti per i candidati in pareggio
+  const runoff = R.tallyVotes(players, { a: 'b', b: 'a', c: 'a', d: 'c' }, findRole, ['a', 'b']);
+  assert.deepEqual([...runoff.totals].map(r => r.playerId), ['a', 'b']);
+  assert.deepEqual([...runoff.leaders], ['a']);
+  assert.equal(R.tallyVotes(players, {}, findRole, null).leaders.length, 0);
+});
+
+test('cronologia della partita', () => {
+  const players = [
+    player('a', 'lupo', { isDead: true, deathCause: 'rogo', diedOnTurn: 1 }),
+    player('b', 'contadino', { isDead: true, isGhost: true, deathCause: 'notte', diedOnTurn: 1 }),
+    player('c', 'veggente')
+  ];
+  const logs = [{ turn: 1, wolfTargets: ['b'], shielded: ['c'], probed: ['a'], flowers: [] }];
+  const tl = R.buildTimeline(players, logs, findRole);
+  assert.deepEqual([...tl].map(e => e.title), ['🌙 Notte 1', '☀️ Giorno 1']);
+  const night = tl[0].lines.join('\n');
+  assert.match(night, /lupi hanno scelto b/);
+  assert.match(night, /Guardia ha protetto c/);
+  assert.match(night, /Veggente ha sondato a/);
+  assert.match(night, /Morto stanotte: b .*Fantasma/);
+  assert.match(tl[1].lines[0], /Bruciato al rogo: a \(🐺 Lupo Mannaro\)/);
+});
+
+test('condividere i ruoli: andata e ritorno, emoji comprese', () => {
+  const custom = { id: 'custom_1', name: 'Mugnaio', icon: '🧑‍🌾', faction: 'Villaggio', whatYouDo: 'Macina il grano, è così.', howYouWin: 'Col villaggio.', wakeTiming: 'mai', priority: 7, narratorPhrase: '', narratorNote: 'Nota «speciale»', isPair: false };
+  const code = R.encodeRolesShare([custom]);
+  assert.match(code, /^LUPUS-RUOLI-1:[A-Za-z0-9+/=]+$/);
+  const decoded = R.decodeRolesShare(`Ecco i miei ruoli!\n${code}\nCiao`);
+  assert.equal(decoded.roles.length, 1);
+  assert.equal(decoded.roles[0].icon, '🧑‍🌾');
+  assert.equal(decoded.roles[0].narratorNote, 'Nota «speciale»');
+  assert.match(R.decodeRolesShare('ciao').error, /Non trovo/);
+  assert.match(R.decodeRolesShare('LUPUS-RUOLI-1:abc').error, /incompleto|rovinato|non contiene/);
+  // valori strani vengono ripuliti
+  const clean = R.sanitizeImportedRole({ name: ' X ', whatYouDo: 'a', howYouWin: 'b', faction: 'Alieni', wakeTiming: 'sempre', priority: 99 });
+  assert.equal(clean.name, 'X');
+  assert.equal(clean.faction, 'Villaggio');
+  assert.equal(clean.wakeTiming, 'mai');
+  assert.equal(clean.priority, 10);
+  assert.equal(R.sanitizeImportedRole({ name: 'Senza testi' }), null);
+});
+
+test('ruoli personalizzati e unione dopo l\'importazione', () => {
+  const base = R.DEFAULT_ROLES.map(r => ({ ...r }));
+  assert.equal(base.some(r => R.isRoleCustomized(r, R.DEFAULT_ROLES)), false);
+  base[0].whatYouDo = 'Cambiato';
+  assert.equal(R.isRoleCustomized(base[0], R.DEFAULT_ROLES), true);
+  let n = 0;
+  const merged = R.mergeImportedRoles(base, [
+    { ...base[1], name: 'contadino', whatYouDo: 'Nuovo testo' },
+    { id: 'custom_9', name: 'Mugnaio', icon: '🌾', faction: 'Villaggio', whatYouDo: 'x', howYouWin: 'y', wakeTiming: 'mai', priority: 5, narratorPhrase: '', narratorNote: '', isPair: false },
+    { id: 'lupo', name: 'Lupo Nero', icon: '🐺', faction: 'Branco', whatYouDo: 'x', howYouWin: 'y', wakeTiming: 'ogni_notte', priority: 5, narratorPhrase: '', narratorNote: '', isPair: false }
+  ], () => `custom_new_${++n}`);
+  assert.equal(merged.updated, 1);
+  assert.equal(merged.added, 2);
+  assert.equal(merged.roles.find(r => r.id === 'contadino').whatYouDo, 'Nuovo testo');
+  assert.ok(merged.roles.some(r => r.id === 'custom_9'));
+  assert.ok(merged.roles.some(r => r.name === 'Lupo Nero' && r.id === 'custom_new_1'));
+  assert.equal(new Set(merged.roles.map(r => r.id)).size, merged.roles.length);
 });

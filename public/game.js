@@ -58,7 +58,7 @@ function vibrate(kind) {
 }
 
 /* =========================================================================
-   4. INIZIALIZZAZIONE E FUNZIONI DI SISTEMA (WAKE LOCK, FULLSCREEN, STORAGE)
+   4. INIZIALIZZAZIONE E FUNZIONI DI SISTEMA (WAKE LOCK, TASTO INDIETRO, STORAGE)
 ========================================================================= */
 window.addEventListener('DOMContentLoaded', () => {
   loadAllFromStorage();

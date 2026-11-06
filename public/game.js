@@ -24,7 +24,16 @@ let appSettings = {
   selectedDeck: {}, // mappa { roleId: count }
   selectedPresetCode: null,
   activeSetupTab: 'presets',
-  knownDefaultRoleIds: null // ruoli base già visti: i nuovi si aggiungono una volta sola
+  knownDefaultRoleIds: null, // ruoli base già visti: i nuovi si aggiungono una volta sola
+  // Varianti della partita (copiate nella partita quando inizia)
+  tieRule: 'runoff',       // pareggio al voto: 'runoff' | 'none' | 'decider'
+  revealDead: false,       // si svela il ruolo di chi muore
+  deckAnnounced: false,    // all'inizio si annunciano i ruoli in gioco
+  surpriseEvents: false,   // eventi a sorpresa nelle notti
+  // Preferenze del Narratore (valgono per tutte le partite)
+  narratorLevel: 'beginner', // 'beginner' (consigli a ogni passo) | 'expert' (solo l'essenziale)
+  voiceOn: false,            // il telefono legge le frasi ad alta voce
+  soundsOn: true             // ululato, gallo, campanella...
 };
 
 // Stato completo della partita attiva (salvato a ogni azione)
@@ -219,6 +228,9 @@ function migrateMatch(match) {
   if (!match.nightChoices) migrateLegacyMatch(match);
   if (!match.usedPowers || typeof match.usedPowers !== 'object') match.usedPowers = {};
   if (!Array.isArray(match.pendingDeathActions)) match.pendingDeathActions = [];
+  if (!TIE_RULE_KEYS.includes(match.tieRule)) match.tieRule = 'runoff';
+  ['revealDead', 'deckAnnounced', 'surpriseEvents'].forEach(k => { if (typeof match[k] !== 'boolean') match[k] = false; });
+  if (match.event && !findSurpriseEvent(match.event.id)) match.event = null;
 }
 
 // Partite salvate con le versioni 1.0-1.2: i segnalini diventano le scelte della modalità guidata.
@@ -571,25 +583,97 @@ function confirmClearPlayers() {
 }
 
 // Interruttori delle opzioni di partita: uguali nel setup e nel menu ⚙️ durante la partita
+// Interruttori delle opzioni: [nella schermata iniziale, nel menu ⚙️ della partita] e valore predefinito
 const MATCH_OPTION_TOGGLES = {
   ghostRule: ['toggleGhostRule', 'toggleGhostRuleInGame'],
   autoResolve: ['toggleAutoResolve', 'toggleAutoResolveInGame'],
-  enforceRules: ['toggleEnforceRules', 'toggleEnforceRulesInGame']
+  enforceRules: ['toggleEnforceRules', 'toggleEnforceRulesInGame'],
+  revealDead: ['toggleRevealDead', 'toggleRevealDeadInGame'],
+  deckAnnounced: ['toggleDeckAnnounced', null],
+  surpriseEvents: ['toggleSurpriseEvents', 'toggleSurpriseEventsInGame']
 };
+const MATCH_OPTION_DEFAULTS = { ghostRule: true, autoResolve: true, enforceRules: true, revealDead: false, deckAnnounced: false, surpriseEvents: false };
+
+function getSetupOption(key) {
+  return typeof appSettings[key] === 'boolean' ? appSettings[key] : MATCH_OPTION_DEFAULTS[key];
+}
 
 function getMatchOption(key) {
   if (activeMatch && typeof activeMatch[key] === 'boolean') return activeMatch[key];
-  return appSettings[key] !== false;
+  return getSetupOption(key);
+}
+
+function getTieRule() {
+  const rule = activeMatch && activeMatch.tieRule ? activeMatch.tieRule : appSettings.tieRule;
+  return TIE_RULE_KEYS.includes(rule) ? rule : 'runoff';
 }
 
 function syncMatchOptionToggles() {
   Object.entries(MATCH_OPTION_TOGGLES).forEach(([key, ids]) => {
-    const setupValue = appSettings[key] !== false;
-    const el0 = document.getElementById(ids[0]);
-    if (el0) el0.checked = setupValue;
-    const el1 = document.getElementById(ids[1]);
+    const el0 = ids[0] && document.getElementById(ids[0]);
+    if (el0) el0.checked = getSetupOption(key);
+    const el1 = ids[1] && document.getElementById(ids[1]);
     if (el1) el1.checked = getMatchOption(key);
   });
+  ['optTieRule', 'optTieRuleInGame'].forEach((id, i) => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    if (!select.options.length) select.innerHTML = TIE_RULE_KEYS.map(k => `<option value="${k}">${escapeHtml(TIE_RULES[k].label)}</option>`).join('');
+    select.value = i === 0 ? (TIE_RULE_KEYS.includes(appSettings.tieRule) ? appSettings.tieRule : 'runoff') : getTieRule();
+  });
+  syncNarratorPrefs();
+}
+
+function onTieRuleChange(value) {
+  if (!TIE_RULE_KEYS.includes(value)) return;
+  appSettings.tieRule = value;
+  saveSettingsToStorage();
+  if (activeMatch) {
+    activeMatch.tieRule = value;
+    saveMatchToStorage();
+    if (document.getElementById('modalVote').classList.contains('active')) renderVoteTally();
+  }
+  syncMatchOptionToggles();
+}
+
+/* ---------- Preferenze del Narratore: livello, voce, suoni ---------- */
+function isExpertNarrator() {
+  return appSettings.narratorLevel === 'expert';
+}
+
+function syncNarratorPrefs() {
+  [['toggleVoice', 'voiceOn'], ['toggleVoiceInGame', 'voiceOn'], ['toggleSounds', 'soundsOn'], ['toggleSoundsInGame', 'soundsOn']].forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = key === 'voiceOn' ? appSettings.voiceOn === true : appSettings.soundsOn !== false;
+  });
+  document.querySelectorAll('.level-choice').forEach(btn => {
+    const active = btn.dataset.level === (isExpertNarrator() ? 'expert' : 'beginner');
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  document.getElementById('screenNarrator').classList.toggle('level-expert', isExpertNarrator());
+}
+
+function setNarratorLevel(level) {
+  appSettings.narratorLevel = level === 'expert' ? 'expert' : 'beginner';
+  saveSettingsToStorage();
+  syncNarratorPrefs();
+  vibrate('tap');
+}
+
+async function onNarratorPrefToggle(key, checked) {
+  appSettings[key] = checked;
+  saveSettingsToStorage();
+  syncNarratorPrefs();
+  if (key === 'soundsOn' && checked) playSound('bell');
+  if (key === 'voiceOn') {
+    if (!checked) {
+      stopNarration();
+      return;
+    }
+    const ok = await speakText('La voce del Narratore è attiva.');
+    if (ok === false) voiceUnavailable();
+  }
 }
 
 function onMatchOptionToggle(key, checked) {
@@ -598,6 +682,7 @@ function onMatchOptionToggle(key, checked) {
   if (activeMatch) {
     activeMatch[key] = checked;
     if (key === 'autoResolve' && checked) activeMatch.victoryDismissed = false;
+    if (key === 'surpriseEvents' && !checked) activeMatch.event = null;
     saveMatchToStorage();
     if (document.getElementById('screenNarrator').classList.contains('active')) {
       renderNarratorDashboard();
@@ -1232,6 +1317,13 @@ function startDistributionPhase() {
     ghostRule: appSettings.ghostRule !== false,
     autoResolve: appSettings.autoResolve !== false,
     enforceRules: appSettings.enforceRules !== false,
+    tieRule: TIE_RULE_KEYS.includes(appSettings.tieRule) ? appSettings.tieRule : 'runoff',
+    revealDead: getSetupOption('revealDead'),
+    deckAnnounced: getSetupOption('deckAnnounced'),
+    surpriseEvents: getSetupOption('surpriseEvents'),
+    event: null,            // evento a sorpresa della notte { turn, id }
+    usedPowers: {},
+    pendingDeathActions: [],
     initialDeckMap: { ...appSettings.selectedDeck },
     victoryDismissed: false,
     guideKey: 'intro',      // passo attuale della modalità guidata
@@ -1293,6 +1385,7 @@ function nextDistributionPlayer() {
 }
 
 function beginNarratorMatch() {
+  lastNarratedKey = null;
   activeMatch.status = 'playing';
   activeMatch.turn = 1;
   activeMatch.phase = 'night';
@@ -1307,6 +1400,7 @@ function resumeSavedMatch() {
     renderDistributionStep();
     showScreen('screenDistribution');
   } else {
+    syncNarrationKey();
     renderNarratorDashboard();
     showScreen('screenNarrator');
   }
@@ -1389,7 +1483,10 @@ function renderVictoryBanner() {
   const winInfo = evaluateVictoryCondition();
 
   if (winInfo && !activeMatch.victoryDismissed) {
-    if (lastVictoryText !== winInfo.text) vibrate('victory');
+    if (lastVictoryText !== winInfo.text) {
+      vibrate('victory');
+      playSound('victory');
+    }
     lastVictoryText = winInfo.text;
     banner.style.display = 'flex';
     banner.className = 'victory-banner ' + (winInfo.type === 'wolves' ? 'wolves' : winInfo.type === 'solo' ? 'solo' : '');
@@ -1433,6 +1530,7 @@ function undoPhaseChange() {
   doWithUndo(`↩️ Sei tornato a: ${getPhaseLabel(previous)}`, () => {
     stopDayTimer();
     activeMatch = previous;
+    syncNarrationKey();
     saveMatchToStorage();
     renderNarratorDashboard();
   });
@@ -1458,7 +1556,7 @@ function isRulesEnforced() {
 
 // Piano della notte in corso (tiene conto dei poteri già usati, come le pozioni della Strega)
 function currentNightPlan() {
-  return buildNightPlan(activeMatch.players, rolesDB, activeMatch.turn, activeMatch.usedPowers || {});
+  return buildNightPlan(activeMatch.players, rolesDB, activeMatch.turn, activeMatch.usedPowers || {}, currentNightEffects());
 }
 
 function getGuidePlan() {
@@ -1500,7 +1598,9 @@ function getStepChipLabel(step) {
 
 function guideGo(delta) {
   const plan = getGuidePlan();
-  const idx = Math.min(plan.length - 1, Math.max(0, getGuideIndex(plan) + delta));
+  const current = getGuideIndex(plan);
+  const idx = Math.min(plan.length - 1, Math.max(0, current + delta));
+  if (delta > 0) prepareStepClose(plan[current]);
   setGuideStep(plan[idx].key);
 }
 
@@ -1565,6 +1665,7 @@ function renderNarratorGuide() {
     stopEmptyCallTimer();
   }
   if (step.kind === 'debate') updateTimerUI();
+  maybeNarrateStep(step);
 }
 
 function renderGuideNav(step, plan, idx) {
@@ -1593,22 +1694,157 @@ function renderGuideStepBody(step, plan) {
   }
 }
 
+/* ---------- Eventi a sorpresa e frasi dei passi ---------- */
+const NIGHTFALL_PHRASE = '«Cala la notte sul villaggio: tutti chiudono gli occhi e abbassano la testa.»';
+const DEBATE_PHRASE = '«Il villaggio discute: chi sono i lupi? Il tempo parte adesso!»';
+const VOTE_PHRASE = '«È il momento di votare: ognuno indichi chi vuole mandare al rogo.»';
+const FESTA_VOTE_PHRASE = '«Oggi è festa: niente rogo! Godetevi la festa... ma tenete d\'occhio i vicini.»';
+
+// Consigli per il Narratore principiante (nascosti in modalità esperto)
+const NARRATOR_TIPS = {
+  intro: 'Parla piano e a voce bassa. Prima di andare avanti controlla che tutti abbiano gli occhi chiusi: se qualcuno sbircia, fermati e ricomincia.',
+  wolves: 'I lupi si mettono d\'accordo a gesti, in silenzio. Aspetta che indichino tutti la stessa persona, poi tocca il suo nome.',
+  witch: 'Indica con il dito la vittima dei lupi. La Strega risponde a gesti: pollice su per salvarla, poi indica chi avvelenare oppure fa no con la testa.',
+  target: 'Guarda chi apre gli occhi senza farti notare. Quando indica qualcuno, fai un cenno per confermare e tocca il suo nome qui.',
+  wake: 'Lascia qualche secondo per guardarsi intorno, poi fai chiudere gli occhi.',
+  empty: 'Fai finta di aspettare come sempre: nessuno deve capire che quel ruolo non c\'è più.',
+  dawn: 'Questo riepilogo è solo per te. Se qualcosa non torna, tocca un passo in alto e correggilo prima di far sorgere il giorno.',
+  morning: 'Annuncia i morti con calma. Da adesso chi è morto non parla più (il Fantasma può solo votare).',
+  debate: 'Fai parlare tutti, uno alla volta. Se il dibattito si blocca, chiedi a chi è stato più zitto cosa ne pensa.',
+  vote: 'Apri la votazione e chiedi a ognuno, uno alla volta, chi vuole mandare al rogo.',
+  dusk: 'Prima di iniziare la notte, ricorda a tutti di chiudere gli occhi e di non fare rumore.'
+};
+
+function guideTip(kind) {
+  return NARRATOR_TIPS[kind] ? `<div class="guide-tip">🎓 ${escapeHtml(NARRATOR_TIPS[kind])}</div>` : '';
+}
+
+// Frase da leggere ad alta voce, con il pulsante 🔊 per farla leggere al telefono
+function phraseHtml(contentHtml) {
+  return `<div class="guide-phrase"><span class="phrase-text">${contentHtml}</span><button class="phrase-say" onclick="sayPhrase(this)" title="Leggi ad alta voce" aria-label="Leggi ad alta voce">🔊</button></div>`;
+}
+
+// Evento a sorpresa del turno in corso (esce al calare della notte)
+function currentRoundEvent() {
+  if (!activeMatch || !activeMatch.surpriseEvents || !activeMatch.event || activeMatch.event.turn !== activeMatch.turn) return null;
+  return findSurpriseEvent(activeMatch.event.id);
+}
+
+function currentDayEvent() {
+  const ev = currentRoundEvent();
+  return ev && ev.phase === 'day' ? ev : null;
+}
+
+function currentNightEffects() {
+  const ev = currentRoundEvent();
+  return eventEffects(ev && ev.phase === 'night' ? ev : null);
+}
+
+function dayEventIs(effect) {
+  const ev = currentDayEvent();
+  return !!ev && ev.effect === effect;
+}
+
+function renderEventCard(ev) {
+  return `
+    <div class="event-card">
+      <div class="event-title">${escapeHtml(ev.icon)} Evento a sorpresa: ${escapeHtml(ev.name)}</div>
+      <div>${escapeHtml(ev.text)}</div>
+      ${phraseHtml(escapeHtml(ev.phrase))}
+      <div class="event-actions">
+        <button class="btn btn-sm" onclick="rerollSurpriseEvent()">🎲 Pescane un altro</button>
+        <button class="btn btn-sm" onclick="removeSurpriseEvent()">✖ Niente evento</button>
+      </div>
+    </div>`;
+}
+
+function setSurpriseEvent(ev) {
+  activeMatch.event = ev ? { turn: activeMatch.turn, id: ev.id } : null;
+  if (ev) activeMatch.lastEventId = ev.id;
+  saveMatchToStorage();
+  renderNarratorDashboard();
+  if (ev) narrate([{ say: ev.phrase }]);
+}
+
+function surpriseEventExclusions() {
+  return activeMatch.revealDead ? ['veglia'] : [];
+}
+
+function rerollSurpriseEvent() {
+  const current = currentRoundEvent();
+  vibrate('tap');
+  setSurpriseEvent(pickSurpriseEvent(Math.random, [current ? current.id : null].concat(surpriseEventExclusions())));
+}
+
+function removeSurpriseEvent() {
+  vibrate('tap');
+  setSurpriseEvent(null);
+}
+
+function introPhrases() {
+  const lines = [];
+  if (activeMatch.turn === 1 && activeMatch.deckAnnounced) lines.push(deckAnnouncement(activeMatch.initialDeckMap, findRoleOrNull));
+  lines.push(NIGHTFALL_PHRASE);
+  const ev = currentRoundEvent();
+  if (ev) lines.push(ev.phrase);
+  return lines;
+}
+
 function renderIntroStep(plan) {
   const calls = plan.filter(st => st.kind !== 'intro' && st.kind !== 'dawn');
   const list = calls.length
     ? calls.map(st => `${escapeHtml(getStepChipLabel(st))}${st.emptyCall ? ' <span class="guide-muted">(chiamata a vuoto)</span>' : ''}`).join(' · ')
     : 'Nessun ruolo da chiamare stanotte.';
-  return `
-    <div class="guide-phrase">«Cala la notte sul villaggio: tutti chiudono gli occhi e abbassano la testa.»</div>
+  let html = '';
+  if (activeMatch.turn === 1 && activeMatch.deckAnnounced) {
+    html += `<div class="guide-info">📣 Prima di iniziare, annuncia a tutti i ruoli in gioco:</div>`;
+    html += phraseHtml(escapeHtml(deckAnnouncement(activeMatch.initialDeckMap, findRoleOrNull)));
+  }
+  html += phraseHtml(escapeHtml(NIGHTFALL_PHRASE));
+  const ev = currentRoundEvent();
+  if (ev) {
+    html += renderEventCard(ev);
+  } else if (activeMatch.surpriseEvents) {
+    html += activeMatch.turn === 1
+      ? '<div class="guide-muted guide-help">🎲 Gli eventi a sorpresa iniziano dalla seconda notte.</div>'
+      : `<div class="guide-muted">🎲 Stanotte nessun evento a sorpresa. <button class="btn btn-sm" onclick="rerollSurpriseEvent()">Pesca un evento</button></div>`;
+  }
+  html += `
     <div class="guide-info">Stanotte chiamerai, in quest'ordine: ${list}</div>
-    <div class="guide-muted">Tocca "Avanti" quando tutti hanno gli occhi chiusi.</div>
+    <div class="guide-muted guide-help">Tocca "Avanti" quando tutti hanno gli occhi chiusi.</div>
+    ${guideTip('intro')}
   `;
+  return html;
 }
 
 function holdersLine(step) {
   if (!step.holders.length) return '';
   const names = step.holders.map(p => p.isDead ? `💀 ${escapeHtml(p.name)}` : `<strong>${escapeHtml(p.name)}</strong>`);
   return `<div class="guide-holders">${step.holders.length === 1 ? 'È' : 'Sono'}: ${names.join(', ')}</div>`;
+}
+
+// Giocatori scelti in un passo (i lupi con la Luna rossa ne scelgono due)
+function getStepChosenIds(step) {
+  const ch = activeMatch.nightChoices || {};
+  if (step.kind === 'wolves') {
+    const ids = [ch[step.key]];
+    if ((step.targets || 1) > 1) ids.push(ch[secondTargetKey(step.key)]);
+    return ids.filter(Boolean);
+  }
+  return ch[step.key] ? [ch[step.key]] : [];
+}
+
+function renderTargetGrid(step, chosenIds) {
+  const options = getTargetOptions(step, activeMatch.players, rolesDB, activeMatch.prevNightChoices || {}, isRulesEnforced());
+  const colors = getMatchColors();
+  return `
+    <div class="target-grid">
+      ${options.map(o => `
+        <button class="target-btn${chosenIds.includes(o.id) ? ' selected' : ''}" ${o.disabled ? 'disabled' : ''} onclick="selectGuideTarget('${step.key}', '${o.id}', ${step.targets || 1})">
+          <span class="target-name">${avatarHtml(o.name, colors[o.id], 'sm')} ${escapeHtml(o.name)}</span>
+          ${o.reason ? `<span class="target-reason">${escapeHtml(o.reason)}</span>` : ''}
+        </button>`).join('')}
+    </div>`;
 }
 
 function renderRoleStep(step, plan) {
@@ -1625,7 +1861,7 @@ function renderRoleStep(step, plan) {
       </div>`;
   }
 
-  html += `<div class="guide-phrase">${escapeHtml(rolePhrase(mainRole))}</div>`;
+  html += phraseHtml(escapeHtml(rolePhrase(mainRole)));
 
   // Chi può sbirciare mentre i lupi sono svegli (es. la Bambina)
   if (step.kind === 'wolves') {
@@ -1635,41 +1871,45 @@ function renderRoleStep(step, plan) {
     });
   }
 
-  if (!step.emptyCall && step.exhausted) {
+  let tip = action.target ? 'target' : 'wake';
+  if (step.emptyCall) {
+    tip = 'empty';
+  } else if (step.exhausted) {
     html += `<div class="guide-empty">🔒 ${step.kind === 'witch' ? 'Ha già usato entrambe le pozioni' : 'Ha già usato il suo potere (una volta per partita)'}: chiamalo lo stesso con la sua frase, così nessuno capisce, poi vai avanti.</div>`;
-  } else if (!step.emptyCall && step.kind === 'witch') {
+  } else if (step.kind === 'wolves' && step.noKill) {
+    html += '<div class="guide-empty">🌑 Eclissi: stanotte i lupi aprono gli occhi e si guardano, ma non possono uccidere. Poi falli richiudere.</div>';
+  } else if (step.blind) {
+    html += '<div class="guide-empty">🌫️ Nebbia: stanotte non vede nulla. Lascia che indichi qualcuno, poi non dare nessuna risposta (allarga le braccia).</div>';
+  } else if (step.kind === 'witch') {
+    tip = 'witch';
     html += renderWitchStep(step, plan);
-  } else if (!step.emptyCall && action.target) {
+  } else if (action.target) {
+    if (step.kind === 'wolves') tip = 'wolves';
+    const twoVictims = step.kind === 'wolves' && (step.targets || 1) > 1;
     const question = step.kind === 'kill' ? `Chi colpisce ${mainRole.name}?` : action.question;
-    const options = getTargetOptions(step, activeMatch.players, rolesDB, activeMatch.prevNightChoices || {}, isRulesEnforced());
-    const chosen = (activeMatch.nightChoices || {})[step.key];
-    const colors = getMatchColors();
+    const chosenIds = getStepChosenIds(step);
+    if (twoVictims) html += '<div class="guide-info">🌕 Luna rossa: stanotte i lupi scelgono <strong>due</strong> vittime.</div>';
     html += `
-      <div class="guide-question">${escapeHtml(question)}</div>
-      <div class="target-grid">
-        ${options.map(o => `
-          <button class="target-btn${o.id === chosen ? ' selected' : ''}" ${o.disabled ? 'disabled' : ''} onclick="selectGuideTarget('${step.key}', '${o.id}')">
-            <span class="target-name">${avatarHtml(o.name, colors[o.id], 'sm')} ${escapeHtml(o.name)}</span>
-            ${o.reason ? `<span class="target-reason">${escapeHtml(o.reason)}</span>` : ''}
-          </button>`).join('')}
-      </div>
-      ${chosen ? renderChoiceResult(step, chosen, plan) : '<div class="guide-muted">Tocca il giocatore indicato. Puoi cambiarlo toccandone un altro.</div>'}
+      <div class="guide-question">${escapeHtml(question)}${twoVictims ? ` <span class="guide-muted">(${chosenIds.length} di 2)</span>` : ''}</div>
+      ${renderTargetGrid(step, chosenIds)}
+      ${chosenIds.length
+        ? chosenIds.map(id => renderChoiceResult(step, id, plan)).join('')
+        : '<div class="guide-muted guide-help">Tocca il giocatore indicato. Puoi cambiarlo toccandone un altro.</div>'}
     `;
   }
 
-  if (step.kind === 'medium' && !step.emptyCall) html += renderMediumInfo();
+  if (step.kind === 'medium' && !step.emptyCall && !step.blind) html += renderMediumInfo();
 
   const notes = roles.map(r => r.narratorNote).filter(Boolean);
   if (notes.length) html += `<div class="guide-note">💡 ${notes.map(escapeHtml).join('<br>💡 ')}</div>`;
-  return html;
+  return html + guideTip(tip);
 }
 
-// Strega (o ruolo con le pozioni): vittima dei lupi da salvare e pozione della morte
+// Strega (o ruolo con le pozioni): vittime dei lupi da salvare e pozione della morte
 function renderWitchStep(step, plan) {
   const choices = activeMatch.nightChoices || {};
   const wolvesStep = plan.find(st => st.kind === 'wolves' && !st.emptyCall);
-  const victimId = wolvesStep ? choices[wolvesStep.key] : null;
-  const victim = victimId ? activeMatch.players.find(p => p.id === victimId) : null;
+  const victims = wolvesTargetIds(plan, choices).map(id => activeMatch.players.find(p => p.id === id)).filter(Boolean);
   const saveKey = witchSaveKey(step.key);
   const colors = getMatchColors();
   let html = '<div class="potion-box">';
@@ -1677,34 +1917,28 @@ function renderWitchStep(step, plan) {
   html += '<div class="potion-title">💚 Pozione della vita</div>';
   if (step.saveUsed) {
     html += '<div class="guide-muted">Già usata in una notte precedente.</div>';
-  } else if (!wolvesStep) {
+  } else if (!wolvesStep || wolvesStep.noKill) {
     html += '<div class="guide-muted">Stanotte i lupi non hanno una vittima.</div>';
-  } else if (!victim) {
+  } else if (!victims.length) {
     html += `<div class="guide-muted">I lupi non hanno ancora scelto. <button class="btn btn-sm" onclick="guideJump('${wolvesStep.key}')">🐺 Torna ai Lupi</button></div>`;
   } else {
-    const isSaving = choices[saveKey] === victim.id;
-    html += `
-      <div class="guide-info">Indica alla Strega la vittima dei lupi: <strong>${escapeHtml(victim.name)}</strong>.</div>
-      <button class="target-btn potion-btn${isSaving ? ' selected' : ''}" onclick="toggleWitchSave('${step.key}', '${victim.id}')">
-        <span class="target-name">${avatarHtml(victim.name, colors[victim.id], 'sm')} ${isSaving ? '💚 Salvato con la pozione' : `Salva ${escapeHtml(victim.name)}`}</span>
-      </button>`;
+    const names = joinNames(victims.map(v => `<strong>${escapeHtml(v.name)}</strong>`));
+    html += `<div class="guide-info">Indica alla Strega ${victims.length > 1 ? 'le vittime' : 'la vittima'} dei lupi: ${names}.${victims.length > 1 ? ' Può salvarne una sola.' : ''}</div>`;
+    victims.forEach(victim => {
+      const isSaving = choices[saveKey] === victim.id;
+      html += `
+        <button class="target-btn potion-btn${isSaving ? ' selected' : ''}" onclick="toggleWitchSave('${step.key}', '${victim.id}')">
+          <span class="target-name">${avatarHtml(victim.name, colors[victim.id], 'sm')} ${isSaving ? `💚 ${escapeHtml(victim.name)} salvato con la pozione` : `Salva ${escapeHtml(victim.name)}`}</span>
+        </button>`;
+    });
   }
 
   html += '<div class="potion-title">☠️ Pozione della morte</div>';
   if (step.killUsed) {
     html += '<div class="guide-muted">Già usata in una notte precedente.</div>';
   } else {
-    const options = getTargetOptions(step, activeMatch.players, rolesDB, activeMatch.prevNightChoices || {}, isRulesEnforced());
     const chosen = choices[step.key];
-    html += `
-      <div class="guide-question">Chi avvelena? (se vuole)</div>
-      <div class="target-grid">
-        ${options.map(o => `
-          <button class="target-btn${o.id === chosen ? ' selected' : ''}" ${o.disabled ? 'disabled' : ''} onclick="selectGuideTarget('${step.key}', '${o.id}')">
-            <span class="target-name">${avatarHtml(o.name, colors[o.id], 'sm')} ${escapeHtml(o.name)}</span>
-            ${o.reason ? `<span class="target-reason">${escapeHtml(o.reason)}</span>` : ''}
-          </button>`).join('')}
-      </div>`;
+    html += `<div class="guide-question">Chi avvelena? (se vuole)</div>${renderTargetGrid(step, chosen ? [chosen] : [])}`;
     if (chosen) {
       const target = activeMatch.players.find(p => p.id === chosen);
       const preview = resolveNight(activeMatch.players, plan, choices, rolesDB);
@@ -1712,7 +1946,7 @@ function renderWitchStep(step, plan) {
       if (target) html += `<div class="guide-result result-danger">☠️ Avvelenato: <strong>${escapeHtml(target.name)}</strong>${isSaved ? '<br>🛡️ È protetto stanotte: si salverà.' : '<br>Morirà all\'alba.'}</div>`;
     }
   }
-  html += '<div class="guide-muted">Se la Strega non vuole usare le pozioni, tocca Avanti.</div>';
+  html += '<div class="guide-muted guide-help">Se la Strega non vuole usare le pozioni, tocca Avanti.</div>';
   return html + '</div>';
 }
 
@@ -1776,11 +2010,34 @@ function renderMediumInfo() {
   </div>`;
 }
 
-function selectGuideTarget(stepKey, playerId) {
+// targets = quante persone sceglie il passo (2 per i lupi con la Luna rossa)
+function selectGuideTarget(stepKey, playerId, targets = 1) {
   vibrate('tap');
   if (!activeMatch.nightChoices) activeMatch.nightChoices = {};
-  if (activeMatch.nightChoices[stepKey] === playerId) delete activeMatch.nightChoices[stepKey];
-  else activeMatch.nightChoices[stepKey] = playerId;
+  const ch = activeMatch.nightChoices;
+  if (targets > 1) {
+    const second = secondTargetKey(stepKey);
+    if (ch[stepKey] === playerId) {
+      delete ch[stepKey];
+      if (ch[second]) {
+        ch[stepKey] = ch[second];
+        delete ch[second];
+      }
+    } else if (ch[second] === playerId) {
+      delete ch[second];
+    } else if (!ch[stepKey]) {
+      ch[stepKey] = playerId;
+    } else if (!ch[second]) {
+      ch[second] = playerId;
+    } else {
+      showToast('Hai già scelto 2 vittime: toccane una per toglierla.', 'warn');
+      return;
+    }
+  } else if (ch[stepKey] === playerId) {
+    delete ch[stepKey];
+  } else {
+    ch[stepKey] = playerId;
+  }
   saveMatchToStorage();
   renderNarratorGuide();
   renderNarratorPlayersList();
@@ -1811,8 +2068,13 @@ function renderDawnStep(plan) {
     rows.push(`🎭 <strong>${nameOf(c.playerId)}</strong> diventa ${nr ? `${escapeHtml(nr.icon)} ${escapeHtml(nr.name)}` : 'nessun ruolo nuovo'}`);
   });
 
-  // Le pozioni sono facoltative: non si segnalano come scelta mancante
-  const missing = plan.filter(st => !st.emptyCall && !st.exhausted && st.kind !== 'witch' && (NIGHT_ACTIONS[st.kind] || {}).target && !(activeMatch.nightChoices || {})[st.key]);
+  // Scelte dimenticate (le pozioni sono facoltative; con Eclissi e Nebbia non c'è niente da scegliere)
+  const choices = activeMatch.nightChoices || {};
+  const missing = plan.filter(st => {
+    if (st.emptyCall || st.exhausted || st.blind || st.kind === 'witch' || !(NIGHT_ACTIONS[st.kind] || {}).target) return false;
+    if (st.kind === 'wolves') return !st.noKill && getStepChosenIds(st).length < (st.targets || 1);
+    return !choices[st.key];
+  });
   const missingHtml = missing.length
     ? `<div class="guide-empty">⚠️ Manca la scelta di: ${missing.map(st => `<button class="btn btn-sm" onclick="guideJump('${st.key}')">${escapeHtml(getStepChipLabel(st))}</button>`).join(' ')}</div>`
     : '';
@@ -1821,17 +2083,34 @@ function renderDawnStep(plan) {
     <div class="guide-muted">Riepilogo per te (non leggerlo ad alta voce):</div>
     <div class="guide-result">${rows.length ? rows.join('<br>') : '🌙 Notte tranquilla: nessuno muore.'}</div>
     ${missingHtml}
-    <div class="guide-muted">${isAutoResolve()
+    <div class="guide-muted guide-help">${isAutoResolve()
       ? '🤖 Quando fai sorgere il giorno, i morti vengono segnati da soli e l\'app controlla se qualcuno ha vinto.'
       : '✋ Morti automatiche spente: al mattino segnerai tu chi è morto.'}</div>
+    ${guideTip('dawn')}
   `;
+}
+
+// Si svela il ruolo dei morti? (variante della partita, oppure evento "Veglia funebre")
+function revealsNightDeaths() {
+  return !!activeMatch.revealDead || dayEventIs('revealNightDeaths');
+}
+
+function getMorningLines() {
+  const turn = activeMatch.turn;
+  const last = activeMatch.lastNightResult && activeMatch.lastNightResult.turn === turn ? activeMatch.lastNightResult : null;
+  const nameOf = id => (activeMatch.players.find(p => p.id === id) || { name: '?' }).name;
+  const deadTonight = activeMatch.players.filter(p => p.isDead && p.deathCause === 'notte' && p.diedOnTurn === turn);
+  const lines = buildMorningAnnouncement(deadTonight.map(p => p.name), last ? last.marks : [], findRoleOrNull, nameOf);
+  if (revealsNightDeaths()) deadTonight.forEach(p => lines.push(roleRevealLine(p.name, findRoleOrNull(p.roleId))));
+  const ev = currentDayEvent();
+  if (ev && ev.today) lines.push(ev.today);
+  return lines;
 }
 
 function renderMorningStep() {
   const turn = activeMatch.turn;
   const last = activeMatch.lastNightResult && activeMatch.lastNightResult.turn === turn ? activeMatch.lastNightResult : null;
   const nameOf = id => (activeMatch.players.find(p => p.id === id) || { name: '?' }).name;
-  const deadTonight = activeMatch.players.filter(p => p.isDead && p.deathCause === 'notte' && p.diedOnTurn === turn);
   let html = '';
 
   if (!isAutoResolve() && last) {
@@ -1845,9 +2124,10 @@ function renderMorningStep() {
     }
   }
 
-  const lines = buildMorningAnnouncement(deadTonight.map(p => p.name), last ? last.marks : [], findRoleOrNull, nameOf);
-  html += `<div class="guide-phrase">${lines.map(escapeHtml).join('<br><br>')}</div>`;
-  html += `<div class="guide-muted">Annuncia i morti senza svelare il loro ruolo (se giocate così).</div>`;
+  const ev = currentDayEvent();
+  if (ev) html += `<div class="event-card"><div class="event-title">${escapeHtml(ev.icon)} ${escapeHtml(ev.name)}</div><div>${escapeHtml(ev.text.replace(/^Domani|^Domattina/, m => (m === 'Domani' ? 'Oggi' : 'Stamattina')))}</div></div>`;
+  html += phraseHtml(getMorningLines().map(escapeHtml).join('<br><br>'));
+  html += `<div class="guide-muted guide-help">${revealsNightDeaths() ? 'Leggi anche il ruolo dei morti.' : 'Annuncia i morti senza svelare il loro ruolo.'}</div>`;
 
   const ghost = activeMatch.players.find(p => p.isGhost && p.diedOnTurn === turn);
   if (ghost) html += `<div class="guide-info">👻 <strong>${escapeHtml(ghost.name)}</strong> è il Fantasma: da ora resta in silenzio, ma vota al rogo.</div>`;
@@ -1857,14 +2137,15 @@ function renderMorningStep() {
       return `${escapeHtml(nameOf(c.playerId))} ora è ${nr ? `${escapeHtml(nr.icon)} ${escapeHtml(nr.name)}` : 'senza ruolo nuovo'}`;
     }).join(', ')}.</div>`;
   }
-  return html;
+  return html + guideTip('morning');
 }
 
 function renderDebateStep() {
   const ghosts = activeMatch.players.filter(p => p.isGhost).map(p => p.name);
   const mayors = activeMatch.players.filter(p => !p.isDead && roleTraits(findRoleOrNull(p.roleId)).doubleVote).map(p => p.name);
   return `
-    <div class="guide-phrase">«Il villaggio discute: chi sono i lupi? Il tempo parte adesso!»</div>
+    ${phraseHtml(escapeHtml(DEBATE_PHRASE))}
+    ${dayEventIs('shortDebate') ? '<div class="guide-info">⚡ Processo lampo: oggi il dibattito dura la metà.</div>' : ''}
     <div class="timer-box">
       <div>
         <div id="dayTimerDisplay" class="timer-display ${dayTimerSeconds === 0 ? 'expired' : ''}">${formatTimer(dayTimerSeconds)}</div>
@@ -1880,7 +2161,18 @@ function renderDebateStep() {
       👻 Fantasma: ${ghosts.length ? `<strong>${escapeHtml(ghosts.join(', '))}</strong> (zitto, ma vota)` : 'nessuno'}<br>
       🎖️ Voto doppio: ${mayors.length ? `<strong>${escapeHtml(mayors.join(', '))}</strong>` : 'nessuno'}
     </div>
+    ${guideTip('debate')}
   `;
+}
+
+function getVotePhrases() {
+  const burned = findBurnedOnDay(activeMatch.players, activeMatch.turn);
+  if (burned) {
+    const lines = [`«${burned.name} viene condannato al rogo!»`];
+    if (activeMatch.revealDead) lines.push(roleRevealLine(burned.name, findRoleOrNull(burned.roleId)));
+    return lines;
+  }
+  return [dayEventIs('noBurning') ? FESTA_VOTE_PHRASE : VOTE_PHRASE];
 }
 
 function renderVoteStep() {
@@ -1889,22 +2181,40 @@ function renderVoteStep() {
     const role = getRoleById(burned.roleId);
     return `
       <div class="guide-result result-danger">🔥 Oggi il villaggio ha bruciato <strong>${escapeHtml(burned.name)}</strong> (${escapeHtml(role.icon)} ${escapeHtml(role.name)}).</div>
-      <div class="guide-phrase">«${escapeHtml(burned.name)} viene condannato al rogo!»</div>
-      <div class="guide-muted">Se hai sbagliato, nella scheda 👥 Giocatori tocca ❌ per riportarlo in vita.</div>
+      ${phraseHtml(getVotePhrases().map(escapeHtml).join('<br><br>'))}
+      <div class="guide-muted guide-help">Se hai sbagliato, nella scheda 👥 Giocatori tocca ❌ per riportarlo in vita.</div>
     `;
   }
+  if (dayEventIs('noBurning')) {
+    return `
+      ${phraseHtml(escapeHtml(FESTA_VOTE_PHRASE))}
+      <div class="guide-info">🎉 Festa al villaggio: oggi niente votazione. Tocca Avanti.</div>
+    `;
+  }
+  const tieLabels = {
+    runoff: 'i pareggi si risolvono con il ballottaggio',
+    none: 'con un pareggio nessuno va al rogo',
+    decider: 'con un pareggio decide chi ha il voto doppio'
+  };
   return `
-    <div class="guide-phrase">«È il momento di votare: ognuno indichi chi vuole mandare al rogo.»</div>
+    ${phraseHtml(escapeHtml(VOTE_PHRASE))}
     <button class="btn btn-warning" onclick="openVoteModal()">🗳️ Apri la votazione</button>
-    <div class="guide-muted">L'app conta i voti (il voto doppio vale 2, il Fantasma vota) e gestisce i pareggi. Se oggi nessuno va al rogo, tocca Avanti.</div>
+    <div class="guide-muted guide-help">L'app conta i voti (il voto doppio vale 2, il Fantasma vota); ${tieLabels[getTieRule()]}. Se oggi nessuno va al rogo, tocca Avanti.</div>
+    ${guideTip('vote')}
   `;
+}
+
+function getDuskPhrase() {
+  const burned = findBurnedOnDay(activeMatch.players, activeMatch.turn);
+  return `«Il sole tramonta sul villaggio${burned ? ` e le ceneri di ${burned.name} si raffreddano` : ''}... presto arriverà la notte.»`;
 }
 
 function renderDuskStep() {
   const burned = findBurnedOnDay(activeMatch.players, activeMatch.turn);
   return `
-    <div class="guide-phrase">«Il sole tramonta sul villaggio${burned ? ` e le ceneri di ${escapeHtml(burned.name)} si raffreddano` : ''}... presto arriverà la notte.»</div>
-    <div class="guide-muted">${burned ? '' : 'Oggi nessuno è stato bruciato. '}Quando sei pronto, inizia la notte.</div>
+    ${phraseHtml(escapeHtml(getDuskPhrase()))}
+    <div class="guide-muted guide-help">${burned ? '' : 'Oggi nessuno è stato bruciato. '}Quando sei pronto, inizia la notte.</div>
+    ${guideTip('dusk')}
   `;
 }
 
@@ -1939,13 +2249,14 @@ function advanceToDay() {
   }
 
   activeMatch.lastNightResult = { turn, deaths: res.deaths, saved: res.saved, immune: res.immune, marks: res.marks, copies: res.copies };
-  activeMatch.nightLogs = (activeMatch.nightLogs || []).filter(l => l.turn !== turn).concat([{ turn, entries: res.entries }]);
+  const roundEvent = currentRoundEvent();
+  activeMatch.nightLogs = (activeMatch.nightLogs || []).filter(l => l.turn !== turn).concat([{ turn, entries: res.entries, eventId: roundEvent ? roundEvent.id : null }]);
   activeMatch.prevNightChoices = { ...(activeMatch.nightChoices || {}) };
   activeMatch.nightChoices = {};
   activeMatch.phase = 'day';
   activeMatch.guideKey = 'morning';
   activeMatch.vote = null;
-  dayTimerSeconds = getTimerDuration();
+  dayTimerSeconds = getDebateDuration();
 
   vibrate(isAutoResolve() && res.deaths.length ? 'death' : 'tap');
   saveMatchToStorage();
@@ -1965,6 +2276,16 @@ function advanceToNight() {
   activeMatch.phase = 'night';
   activeMatch.guideKey = 'intro';
   activeMatch.nightChoices = {};
+
+  // Evento a sorpresa (dalla seconda notte, circa una notte su due o tre)
+  activeMatch.event = null;
+  if (activeMatch.surpriseEvents) {
+    const ev = drawSurpriseEvent(Math.random, activeMatch.lastEventId || null, surpriseEventExclusions());
+    if (ev) {
+      activeMatch.event = { turn: activeMatch.turn, id: ev.id };
+      activeMatch.lastEventId = ev.id;
+    }
+  }
   activeMatch.vote = null;
   activeMatch.players.forEach(p => { p.extraPin = false; });
 
@@ -1997,6 +2318,7 @@ function updateEmptyCallCountdown() {
     clearInterval(emptyCallTimer.interval);
     emptyCallTimer.interval = null;
     vibrate('tap');
+    closeEmptyCallAloud(emptyCallTimer.key);
   }
 }
 
@@ -2010,6 +2332,141 @@ function markNightDeath(playerId) {
   const p = activeMatch.players.find(item => item.id === playerId);
   if (!p || p.isDead) return;
   killPlayer(p, 'notte');
+}
+
+/* =========================================================================
+   VOCE E SUONI DEL NARRATORE
+   A ogni passo nuovo: prima il suono (gufo, ululato, gallo, campanella), poi la voce legge la frase.
+   La chiusura delle frasi dei ruoli («...chiude gli occhi») si legge quando si tocca Avanti.
+========================================================================= */
+let narrationToken = 0;
+let lastNarratedKey = null;
+let pendingCloseText = '';
+let closeSpokenKey = null;
+let voiceWarned = false;
+
+function soundsOn() {
+  return appSettings.soundsOn !== false;
+}
+
+function voiceOn() {
+  return appSettings.voiceOn === true;
+}
+
+function playSound(name) {
+  if (!soundsOn() || typeof LupusSounds === 'undefined') return 0;
+  return LupusSounds.play(name) || 0;
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Legge un testo; false = sul telefono manca la voce italiana
+async function speakText(text) {
+  const clean = speechText(text);
+  if (!clean) return true;
+  const app = nativeApp();
+  if (!app || !app.speak) return false;
+  // se il telefono non avvisa quando ha finito di parlare, si va avanti dopo il tempo stimato
+  const limit = wait(2500 + clean.length * 90).then(() => true);
+  return Promise.race([app.speak(clean), limit]);
+}
+
+function stopNarration() {
+  narrationToken++;
+  const app = nativeApp();
+  if (app && app.stopSpeaking) app.stopSpeaking();
+}
+
+function voiceUnavailable() {
+  if (voiceWarned) return;
+  voiceWarned = true;
+  showToast('🗣️ Manca la voce italiana: scarica "Sintesi vocale di Google" e la lingua italiana dalle impostazioni del telefono.', 'warn');
+  const app = nativeApp();
+  if (app && app.installVoice) app.installVoice();
+}
+
+// parts = [{ sound }, { say }]: ognuno parte quando il precedente è finito. force = legge anche con la voce spenta.
+async function narrate(parts, force = false) {
+  const token = ++narrationToken;
+  const app = nativeApp();
+  if (app && app.stopSpeaking) await app.stopSpeaking();
+  for (const part of parts) {
+    if (token !== narrationToken) return;
+    if (part.sound) {
+      const seconds = playSound(part.sound);
+      if (seconds) await wait(seconds * 1000);
+    } else if (part.say && (force || voiceOn())) {
+      const ok = await speakText(part.say);
+      if (ok === false) {
+        voiceUnavailable();
+        return;
+      }
+    }
+  }
+}
+
+// 🔊 accanto a una frase: la legge subito, anche con la voce automatica spenta
+function sayPhrase(button) {
+  const box = button.closest('.guide-phrase');
+  const text = box ? box.querySelector('.phrase-text').innerText : '';
+  vibrate('tap');
+  narrate(text.split(/\n+/).filter(Boolean).map(line => ({ say: line })), true);
+}
+
+function narrationKey(step) {
+  return `${activeMatch.turn}|${activeMatch.phase}|${step.key}`;
+}
+
+// Segna il passo attuale come già letto (dopo una ripresa o un "Annulla", senza rileggere)
+function syncNarrationKey() {
+  if (!activeMatch || activeMatch.status !== 'playing') return;
+  const plan = getGuidePlan();
+  lastNarratedKey = narrationKey(plan[getGuideIndex(plan)]);
+  pendingCloseText = '';
+  stopNarration();
+}
+
+// Cosa si sente entrando in un passo
+function stepNarration(step) {
+  switch (step.kind) {
+    case 'intro': return [{ sound: 'owl' }].concat(introPhrases().map(say => ({ say })));
+    case 'dawn': return [];
+    case 'morning': return [{ sound: 'rooster' }].concat(getMorningLines().map(say => ({ say })));
+    case 'debate': return [{ say: DEBATE_PHRASE }];
+    case 'vote': return [{ sound: 'bell' }].concat(getVotePhrases().map(say => ({ say })));
+    case 'dusk': return [{ say: getDuskPhrase() }];
+    default: {
+      const parts = step.kind === 'wolves' ? [{ sound: 'howl' }] : [];
+      parts.push({ say: splitPhrase(rolePhrase(getStepRoles(step)[0])).open });
+      return parts;
+    }
+  }
+}
+
+function maybeNarrateStep(step) {
+  const key = narrationKey(step);
+  if (key === lastNarratedKey) return;
+  lastNarratedKey = key;
+  const parts = pendingCloseText ? [{ say: pendingCloseText }] : [];
+  pendingCloseText = '';
+  narrate(parts.concat(stepNarration(step)));
+}
+
+// Avanti da un passo di un ruolo: prima si dice «...chiude gli occhi»
+function prepareStepClose(step) {
+  if (!step || !step.roleIds.length || closeSpokenKey === narrationKey(step)) return;
+  pendingCloseText = splitPhrase(rolePhrase(getStepRoles(step)[0])).close;
+}
+
+// Chiamata a vuoto: finita l'attesa, la voce chiude la chiamata da sola
+function closeEmptyCallAloud(stepKey) {
+  if (!voiceOn() || !activeMatch || activeMatch.phase !== 'night') return;
+  const step = getGuidePlan().find(st => st.key === stepKey);
+  if (!step || activeMatch.guideKey !== stepKey) return;
+  closeSpokenKey = narrationKey(step);
+  narrate([{ say: splitPhrase(rolePhrase(getStepRoles(step)[0])).close }]);
 }
 
 /* =========================================================================
@@ -2038,6 +2495,12 @@ function getTimerDuration() {
   return saved >= 30 && saved <= 1200 ? saved : DEFAULT_DAY_TIMER_SECONDS;
 }
 
+// Durata del dibattito di oggi: la metà con l'evento "Processo lampo"
+function getDebateDuration() {
+  const full = getTimerDuration();
+  return activeMatch && dayEventIs('shortDebate') ? Math.max(30, Math.round(full / 60) * 30) : full;
+}
+
 // Il timer usa l'orario di fine: resta preciso anche se il telefono rallenta o lo schermo si spegne.
 let dayTimerEndsAt = 0;
 
@@ -2045,7 +2508,7 @@ function startPauseDayTimer() {
   if (dayTimerInterval) {
     stopDayTimer();
   } else {
-    if (dayTimerSeconds <= 0) dayTimerSeconds = getTimerDuration();
+    if (dayTimerSeconds <= 0) dayTimerSeconds = getDebateDuration();
     dayTimerEndsAt = Date.now() + dayTimerSeconds * 1000;
     dayTimerInterval = setInterval(() => {
       dayTimerSeconds = Math.max(0, Math.ceil((dayTimerEndsAt - Date.now()) / 1000));
@@ -2053,6 +2516,7 @@ function startPauseDayTimer() {
       if (dayTimerSeconds === 0) {
         stopDayTimer();
         vibrate('alert');
+        playSound('bells');
         showToast('⏰ Tempo del dibattito scaduto! Si passa ai voti.', 'warn');
       }
     }, 250);
@@ -2071,8 +2535,8 @@ function adjustDayTimer(delta) {
     }
   } else {
     dayTimerSeconds = Math.min(1200, Math.max(30, (dayTimerSeconds || getTimerDuration()) + delta));
-    // La durata scelta da fermo diventa quella predefinita delle prossime volte.
-    appSettings.dayTimerSeconds = dayTimerSeconds;
+    // La durata scelta da fermo diventa quella predefinita delle prossime volte (intera anche durante il Processo lampo).
+    appSettings.dayTimerSeconds = activeMatch && dayEventIs('shortDebate') ? Math.min(1200, dayTimerSeconds * 2) : dayTimerSeconds;
     saveSettingsToStorage();
   }
   updateTimerUI();
@@ -2088,7 +2552,7 @@ function stopDayTimer() {
 
 function resetDayTimer() {
   stopDayTimer();
-  dayTimerSeconds = getTimerDuration();
+  dayTimerSeconds = getDebateDuration();
   updateTimerUI();
 }
 
@@ -2118,6 +2582,8 @@ function getNightTagsByPlayer() {
       if (!target) return;
       const text = labelFor(step, getStepRoles(step)[0] || {});
       if (text) add(target, text);
+      const second = (activeMatch.nightChoices || {})[secondTargetKey(step.key)];
+      if (step.kind === 'wolves' && (step.targets || 1) > 1 && second) add(second, text);
     });
     plan.filter(step => step.kind === 'witch').forEach(step => {
       const saved = (activeMatch.nightChoices || {})[witchSaveKey(step.key)];
@@ -2210,7 +2676,7 @@ function renderDeathActionsCard() {
     return `
       <div class="death-shot-card">
         <div class="guide-title">${escapeHtml(role.icon)} ${escapeHtml(shooter.name)} è morto: chi porta con sé?</div>
-        <div class="guide-phrase">«${escapeHtml(shooter.name)} si rivela: ${escapeHtml(role.name)}! Prima di morire, sceglie qualcuno da portare con sé...»</div>
+        ${phraseHtml(`«${escapeHtml(shooter.name)} si rivela: ${escapeHtml(role.name)}! Prima di morire, sceglie qualcuno da portare con sé...»`)}
         <div class="target-grid">
           ${targets.map(t => `
             <button class="target-btn" onclick="resolveDeathShot('${shooter.id}', '${t.id}')">
@@ -2719,9 +3185,19 @@ function renderVoteTally() {
     actions.innerHTML = `<button class="btn btn-warning" onclick="burnFromVote('${leaderId}')">🔥 Brucia ${escapeHtml(nameOf(leaderId))} (${tally.maxVotes} ${tally.maxVotes === 1 ? 'voto' : 'voti'})</button>`;
   } else if (tally.leaders.length > 1) {
     const names = tally.leaders.map(nameOf);
-    actions.innerHTML = `
-      <div class="scaletta-highlight">⚖️ Pareggio tra <strong>${escapeHtml(names.join(', '))}</strong> con ${tally.maxVotes} voti.</div>
-      <button class="btn btn-primary" onclick="startRunoff()">⚖️ Ballottaggio tra ${escapeHtml(names.join(' e '))}</button>`;
+    const outcome = tieOutcome(getTieRule(), activeMatch.players, findRoleOrNull);
+    let html = `<div class="scaletta-highlight">⚖️ Pareggio tra <strong>${escapeHtml(names.join(', '))}</strong> con ${tally.maxVotes} voti.</div>`;
+    if (outcome.kind === 'none') {
+      html += `<div class="card-subtitle">Con la regola scelta, quando c'è un pareggio oggi nessuno va al rogo.</div>
+        <button class="btn btn-primary" onclick="closeVoteModal()">🕊️ Nessuno al rogo</button>`;
+    } else if (outcome.kind === 'decider') {
+      html += `<div class="card-subtitle">Decide <strong>${escapeHtml(nameOf(outcome.deciderId))}</strong> (voto doppio): chi va al rogo?</div>
+        ${tally.leaders.map(id => `<button class="btn btn-warning" onclick="burnFromVote('${id}')">🔥 Brucia ${escapeHtml(nameOf(id))}</button>`).join('')}`;
+    } else {
+      if (getTieRule() === 'decider') html += '<div class="card-subtitle">Nessuno ha il voto doppio: si fa il ballottaggio.</div>';
+      html += `<button class="btn btn-primary" onclick="startRunoff()">⚖️ Ballottaggio tra ${escapeHtml(names.join(' e '))}</button>`;
+    }
+    actions.innerHTML = html;
   } else {
     actions.innerHTML = '';
   }
@@ -2973,6 +3449,21 @@ function renderGuide() {
   }).join('') || '<div class="card-subtitle">Nessun ruolo da mostrare.</div>';
 
   document.getElementById('guideGhostRule').style.display = ghostOn ? 'block' : 'none';
+
+  // Varianti ed eventi a sorpresa scelti per questa partita
+  const option = key => getMatchOption(key);
+  const tieTexts = {
+    runoff: 'se c\'è un pareggio si rivota solo tra chi ha pareggiato (ballottaggio).',
+    none: 'se c\'è un pareggio quel giorno nessuno va al rogo.',
+    decider: 'se c\'è un pareggio decide chi ha il voto doppio (es. il Sindaco).'
+  };
+  const variants = [`⚖️ <strong>Pareggio al voto:</strong> ${tieTexts[getTieRule()]}`];
+  if (option('revealDead')) variants.push('🪦 <strong>Ruoli svelati:</strong> quando qualcuno muore si annuncia che ruolo aveva.');
+  if (option('deckAnnounced')) variants.push('📣 <strong>Mazzo annunciato:</strong> all\'inizio si dice a tutti quali ruoli sono in gioco.');
+  if (option('surpriseEvents')) {
+    variants.push(`🎲 <strong>Eventi a sorpresa</strong> (dalla seconda notte, ogni tanto):<br>${SURPRISE_EVENTS.map(ev => `${escapeHtml(ev.icon)} <strong>${escapeHtml(ev.name)}</strong>: ${escapeHtml(ev.text)}`).join('<br>')}`);
+  }
+  document.getElementById('guideVariants').innerHTML = variants.map(v => `<div>${v}</div>`).join('');
 }
 
 /* =========================================================================
@@ -3203,6 +3694,7 @@ function restoreAppState(json) {
 
   let screen = st.screen;
   if ((screen === 'screenNarrator' || screen === 'screenDistribution') && !activeMatch) screen = 'screenSetup';
+  syncNarrationKey();
   if (screen === 'screenNarrator') renderNarratorDashboard();
   else if (screen === 'screenDistribution') renderDistributionStep();
   else if (screen === 'screenRoleEditor') renderEditorRolesList();

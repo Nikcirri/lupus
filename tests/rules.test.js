@@ -8,7 +8,7 @@ const code = readFileSync(new URL('../public/rules.js', import.meta.url), 'utf8'
 const ctx = vm.createContext({ TextEncoder, TextDecoder, btoa, atob });
 vm.runInContext(
   code +
-    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
+    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, TIE_RULE_KEYS, tieOutcome, roleRevealLine, deckAnnouncement, SURPRISE_EVENTS, findSurpriseEvent, eventEffects, drawSurpriseEvent, pickSurpriseEvent, splitPhrase, speechText, secondTargetKey, wolvesTargetIds, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
   ctx
 );
 const R = ctx.R;
@@ -552,4 +552,94 @@ test('capacità spiegate in parole semplici', () => {
   assert.match(white, /ultimo vivo/);
   assert.ok(R.roleAbilityNotes(findRole('sindaco')).some(n => /vale doppio/.test(n)));
   for (const k of R.VALID_WAKE_TIMINGS) assert.ok(R.WAKE_TIMING_LABELS[k].short && R.WAKE_TIMING_LABELS[k].long, k);
+});
+
+// ---------- 1.6: varianti, eventi a sorpresa, voce ----------
+const seq = values => { let i = 0; return () => values[i++ % values.length]; };
+
+test('pareggio al voto secondo la regola scelta', () => {
+  const players = [player('a', 'lupo'), player('s', 'sindaco'), player('c', 'contadino')];
+  assert.equal(R.tieOutcome('runoff', players, findRole).kind, 'runoff');
+  assert.equal(R.tieOutcome('none', players, findRole).kind, 'none');
+  const d = R.tieOutcome('decider', players, findRole);
+  assert.equal(d.kind, 'decider');
+  assert.equal(d.deciderId, 's');
+  // Sindaco morto: si torna al ballottaggio
+  const noMayor = [player('a', 'lupo'), player('s', 'sindaco', { isDead: true }), player('c', 'contadino')];
+  assert.equal(R.tieOutcome('decider', noMayor, findRole).kind, 'runoff');
+  assert.deepEqual([...R.TIE_RULE_KEYS], ['runoff', 'none', 'decider']);
+});
+
+test('ruolo dei morti svelato e mazzo annunciato', () => {
+  assert.equal(R.roleRevealLine('Dario', findRole('veggente')), '«Il ruolo di Dario era: 🔮 Veggente.»');
+  const text = R.deckAnnouncement({ contadino: 3, veggente: 1, lupo: 2, giullare: 1, sparito: 1 }, findRole);
+  assert.equal(text, '«In questa partita ci sono: Lupo Mannaro (2), Giullare, Veggente e Contadino (3).»');
+});
+
+test('eventi a sorpresa: estrazione', () => {
+  assert.equal(R.drawSurpriseEvent(seq([0.9]), null, []), null);
+  const e = R.drawSurpriseEvent(seq([0.1, 0]), null, []);
+  assert.equal(e.id, R.SURPRISE_EVENTS[0].id);
+  // mai lo stesso evento due volte di fila
+  assert.notEqual(R.drawSurpriseEvent(seq([0.1, 0]), R.SURPRISE_EVENTS[0].id, []).id, R.SURPRISE_EVENTS[0].id);
+  // eventi esclusi
+  const all = R.SURPRISE_EVENTS.map(x => x.id);
+  assert.equal(R.pickSurpriseEvent(seq([0.5]), all), null);
+  assert.equal(R.pickSurpriseEvent(seq([0.99]), all.slice(1)).id, all[0]);
+  for (const ev of R.SURPRISE_EVENTS) {
+    assert.ok(ev.icon && ev.name && ev.text && ev.phrase && ['night', 'day'].includes(ev.phase), ev.id);
+    if (ev.phase === 'day') assert.ok(ev.today, `${ev.id}: frase del giorno`);
+    assert.equal(Object.values(R.eventEffects(ev)).filter(Boolean).length, 1, ev.id);
+  }
+  assert.equal(Object.values(R.eventEffects(null)).some(Boolean), false);
+  assert.equal(R.findSurpriseEvent('festa').effect, 'noBurning');
+});
+
+test('Luna rossa: i lupi scelgono due vittime', () => {
+  const players = [player('a', 'lupo'), player('s', 'strega'), player('c', 'contadino'), player('d', 'contadino'), player('e', 'contadino')];
+  const fx = R.eventEffects(R.findSurpriseEvent('luna_rossa'));
+  const steps = [...R.buildNightPlan(players, roles(), 1, {}, fx)];
+  const wolves = steps.find(st => st.key === 'wolves');
+  assert.equal(wolves.targets, 2);
+  const ch = { wolves: 'c', [R.secondTargetKey('wolves')]: 'd' };
+  assert.deepEqual([...R.wolvesTargetIds(steps, ch)], ['c', 'd']);
+  const res = R.resolveNight(players, steps, ch, roles());
+  assert.deepEqual([...res.deaths].map(d => d.playerId).sort(), ['c', 'd']);
+  // la Strega può salvare una delle due vittime
+  const saved = R.resolveNight(players, steps, { ...ch, [R.witchSaveKey('role:strega')]: 'd' }, roles());
+  assert.deepEqual([...saved.deaths].map(d => d.playerId), ['c']);
+  // senza evento la seconda scelta non conta
+  const normal = [...R.buildNightPlan(players, roles(), 1, {})];
+  assert.equal(normal.find(st => st.key === 'wolves').targets, 1);
+  assert.deepEqual([...R.resolveNight(players, normal, ch, roles()).deaths].map(d => d.playerId), ['c']);
+});
+
+test('Eclissi e Nebbia', () => {
+  const players = [player('a', 'lupo'), player('v', 'veggente'), player('h', 'criceto'), player('c', 'contadino')];
+  const eclipse = [...R.buildNightPlan(players, roles(), 1, {}, R.eventEffects(R.findSurpriseEvent('eclissi')))];
+  assert.equal(eclipse.find(st => st.key === 'wolves').noKill, true);
+  assert.equal(R.resolveNight(players, eclipse, { wolves: 'c' }, roles()).deaths.length, 0);
+  const fog = [...R.buildNightPlan(players, roles(), 1, {}, R.eventEffects(R.findSurpriseEvent('nebbia')))];
+  assert.equal(fog.find(st => st.key === 'role:veggente').blind, true);
+  // nella nebbia il Veggente non scopre (e non uccide) il Criceto
+  assert.equal(R.resolveNight(players, fog, { 'role:veggente': 'h' }, roles()).deaths.length, 0);
+  assert.equal(R.resolveNight(players, plan(players, 1), { 'role:veggente': 'h' }, roles()).deaths.length, 1);
+});
+
+test('voce: frase divisa in chiamata e chiusura, testo pulito', () => {
+  const seer = R.splitPhrase(findRole('veggente').narratorPhrase);
+  assert.match(seer.open, /^«Si sveglia il Veggente.*\.\.\.$/);
+  assert.equal(seer.close, 'Il Veggente chiude gli occhi.»');
+  const witch = R.splitPhrase(findRole('strega').narratorPhrase);
+  assert.match(witch.open, /pozione della morte su qualcuno\? \.\.\.$/);
+  assert.equal(witch.close, 'La Strega chiude gli occhi.»');
+  assert.deepEqual({ ...R.splitPhrase('«Cala la notte sul villaggio.»') }, { open: '«Cala la notte sul villaggio.»', close: '' });
+  for (const r of R.DEFAULT_ROLES.filter(x => x.narratorPhrase)) assert.ok(R.splitPhrase(r.narratorPhrase).close, `${r.id}: manca la chiusura`);
+  assert.equal(R.speechText('«Il ruolo di Dario era: 🔮 Veggente.»'), 'Il ruolo di Dario era: Veggente.');
+  assert.equal(R.speechText('🧑‍🌾  Contadino'), 'Contadino');
+});
+
+test('cronologia: evento a sorpresa della notte', () => {
+  const tl = R.buildTimeline([player('a', 'lupo'), player('c', 'contadino')], [{ turn: 2, eventId: 'luna_rossa', entries: [] }], findRole);
+  assert.match(tl[0].lines[0], /🌕 Evento a sorpresa: Luna rossa/);
 });

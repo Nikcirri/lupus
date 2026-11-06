@@ -528,6 +528,8 @@ function buildTimeline(players, nightLogs, findRole) {
     const log = (nightLogs || []).find(l => l.turn === turn);
     const nightLines = [];
     const logEntries = log ? (Array.isArray(log.entries) ? log.entries : legacyLogEntries(log)) : [];
+    const event = log && log.eventId ? findSurpriseEvent(log.eventId) : null;
+    if (event) nightLines.push(`${event.icon} Evento a sorpresa: ${event.name}`);
     logEntries.forEach(e => {
       const who = nameOf(e.targetId);
       const extra = e.saved ? ' (salvato 🛡️)' : e.immune ? ' (immune ai lupi)' : '';
@@ -904,10 +906,14 @@ function mergedStepRules(step, findRole) {
  * kind: 'intro' | azione del ruolo (vedi NIGHT_ACTIONS) | 'dawn'.
  * I ruoli che "si svegliano con i Lupi" stanno nel passo 'wolves'.
  * usedPowers = { idGiocatore: ['power' | 'witch-save' | 'witch-kill'] } (poteri già usati).
+ * effects = effetti dell'evento a sorpresa della notte (vedi eventEffects):
+ *   wolvesKillTwice → il passo dei lupi ha targets: 2; wolvesNoKill → noKill: true;
+ *   blindSeers → i passi che indagano hanno blind: true.
  */
-function buildNightPlan(players, roles, turn, usedPowers) {
+function buildNightPlan(players, roles, turn, usedPowers, effects) {
   const list = players || [];
   const used = usedPowers || {};
+  const fx = effects || {};
   const findRole = id => (roles || []).find(r => r.id === id) || null;
   const ordered = (roles || [])
     .map((r, i) => ({ r, i }))
@@ -953,6 +959,11 @@ function buildNightPlan(players, roles, turn, usedPowers) {
     } else {
       step.exhausted = mergedStepRules(step, findRole).oncePerGame && allUsed('power');
     }
+    if (step.kind === 'wolves') {
+      step.targets = fx.wolvesKillTwice ? 2 : 1;
+      step.noKill = !!fx.wolvesNoKill;
+    }
+    if (step.kind === 'investigate' || step.kind === 'medium') step.blind = !!fx.blindSeers;
   });
   steps.push({ key: 'dawn', kind: 'dawn', roleIds: [], holders: [], aliveHolders: [], emptyCall: false });
   return steps;
@@ -1000,6 +1011,21 @@ function witchSaveKey(stepKey) {
   return `${stepKey}#save`;
 }
 
+/** Chiave della seconda vittima (quando un passo ha due bersagli, es. Luna rossa). */
+function secondTargetKey(stepKey) {
+  return `${stepKey}#2`;
+}
+
+/** Vittime scelte dai lupi stanotte (0, 1 o 2), senza ripetizioni. */
+function wolvesTargetIds(steps, choices) {
+  const ch = choices || {};
+  const ws = (steps || []).find(st => st.kind === 'wolves' && !st.emptyCall && !st.exhausted);
+  if (!ws || ws.noKill) return [];
+  const ids = [ch[ws.key]];
+  if ((ws.targets || 1) > 1) ids.push(ch[secondTargetKey(ws.key)]);
+  return ids.filter((id, i) => id && ids.indexOf(id) === i);
+}
+
 /**
  * Risolve la notte: chi muore, chi è salvo, segni da annunciare, ruoli copiati.
  * choices = { chiavePasso: idGiocatore } della notte (per le pozioni: chiavePasso#save = vittima salvata).
@@ -1010,8 +1036,7 @@ function resolveNight(players, steps, choices, roles) {
   const findRole = id => (roles || []).find(r => r.id === id) || null;
   const byId = id => list.find(p => p.id === id);
   const active = (steps || []).filter(st => !st.emptyCall && !st.exhausted);
-  const wolvesStep = active.find(st => st.kind === 'wolves');
-  const wolvesTarget = wolvesStep && byId(ch[wolvesStep.key]) ? byId(ch[wolvesStep.key]) : null;
+  const wolvesTargets = wolvesTargetIds(active, ch).map(byId).filter(Boolean);
 
   const result = { deaths: [], saved: [], immune: [], marks: [], copies: [], entries: [] };
   const protectedIds = new Set();
@@ -1035,23 +1060,33 @@ function resolveNight(players, steps, choices, roles) {
   // Prima le protezioni (Guardia, pozione della vita), poi i colpi
   active.forEach(st => {
     if (st.kind === 'protect' && byId(ch[st.key])) protectedIds.add(ch[st.key]);
-    if (st.kind === 'witch' && !st.saveUsed && wolvesTarget && ch[witchSaveKey(st.key)] === wolvesTarget.id) {
-      savedFromWolves.add(wolvesTarget.id);
-      result.entries.push({ kind: 'witch-save', roleIds: st.roleIds.slice(), targetId: wolvesTarget.id });
+    const saveId = ch[witchSaveKey(st.key)];
+    if (st.kind === 'witch' && !st.saveUsed && wolvesTargets.some(t => t.id === saveId)) {
+      savedFromWolves.add(saveId);
+      result.entries.push({ kind: 'witch-save', roleIds: st.roleIds.slice(), targetId: saveId });
     }
   });
 
   active.forEach(st => {
+    if (st.kind === 'wolves') {
+      wolvesTargets.forEach(target => {
+        const entry = { kind: 'wolves', roleIds: st.roleIds.slice(), targetId: target.id };
+        hit(target, 'wolves', st.roleIds.slice(), entry);
+        result.entries.push(entry);
+      });
+      return;
+    }
     const target = byId(ch[st.key]);
     if (!target) return;
     const entry = { kind: st.kind, roleIds: st.roleIds.slice(), targetId: target.id };
-    if (st.kind === 'wolves' || st.kind === 'kill') {
+    if (st.kind === 'kill') {
       hit(target, st.kind, st.roleIds.slice(), entry);
     } else if (st.kind === 'witch') {
       if (st.killUsed) return;
       entry.kind = 'witch-kill';
       hit(target, 'kill', st.roleIds.slice(), entry);
     } else if (st.kind === 'investigate') {
+      if (st.blind) return; // nebbia: nessuna indagine
       if (roleTraits(findRole(target.roleId)).diesIfInvestigated) addDeath(target, 'indagine', st.roleIds.slice());
     } else if (st.kind === 'mark') {
       result.marks.push({ playerId: target.id, roleId: st.roleIds[0] });
@@ -1071,12 +1106,11 @@ function computePowerUsage(players, steps, choices, roles) {
   const findRole = id => (roles || []).find(r => r.id === id) || null;
   const usage = [];
   const active = (steps || []).filter(st => !st.emptyCall && !st.exhausted);
-  const wolvesStep = active.find(st => st.kind === 'wolves');
-  const wolvesTargetId = wolvesStep ? ch[wolvesStep.key] : null;
+  const wolvesIds = wolvesTargetIds(active, ch);
   active.forEach(st => {
     const add = slot => st.aliveHolders.forEach(h => usage.push({ playerId: h.id, slot }));
     if (st.kind === 'witch') {
-      if (!st.saveUsed && wolvesTargetId && ch[witchSaveKey(st.key)] === wolvesTargetId) add('witch-save');
+      if (!st.saveUsed && wolvesIds.includes(ch[witchSaveKey(st.key)])) add('witch-save');
       if (!st.killUsed && ch[st.key] && list.some(p => p.id === ch[st.key])) add('witch-kill');
     } else if (mergedStepRules(st, findRole).oncePerGame && ch[st.key]) {
       add('power');
@@ -1171,7 +1205,136 @@ function applyNightOrder(roles, orderedIds) {
 }
 
 /* =========================================================================
-   9. GIOCATORI: COLORE, INIZIALE E NOMI GIÀ USATI (FUNZIONI PURE)
+   9. VARIANTI DELLA PARTITA, EVENTI A SORPRESA E VOCE DEL NARRATORE
+========================================================================= */
+// Pareggio al voto: cosa succede quando due o più giocatori hanno gli stessi voti
+const TIE_RULES = {
+  runoff: { label: 'Ballottaggio tra chi ha pareggiato' },
+  none: { label: 'Nessuno va al rogo' },
+  decider: { label: 'Decide chi ha il voto doppio (es. il Sindaco)' }
+};
+const TIE_RULE_KEYS = Object.keys(TIE_RULES);
+
+/**
+ * Cosa fare con un pareggio secondo la regola scelta.
+ * { kind: 'runoff' } | { kind: 'none' } | { kind: 'decider', deciderId }
+ * Se deve decidere chi ha il voto doppio ma nessuno vivo ce l'ha, si fa il ballottaggio.
+ */
+function tieOutcome(rule, players, findRole) {
+  if (rule === 'none') return { kind: 'none' };
+  if (rule === 'decider') {
+    const decider = (players || []).find(p => !p.isDead && roleTraits(findRole(p.roleId)).doubleVote);
+    if (decider) return { kind: 'decider', deciderId: decider.id };
+  }
+  return { kind: 'runoff' };
+}
+
+/** Frase per svelare il ruolo di un morto (variante "ruolo dei morti svelato"). */
+function roleRevealLine(name, role) {
+  return `«Il ruolo di ${name} era: ${role ? `${role.icon} ${role.name}` : 'sconosciuto'}.»`;
+}
+
+/** Frase per annunciare i ruoli in gioco (variante "mazzo annunciato"). */
+function deckAnnouncement(deckMap, findRole) {
+  const parts = Object.entries(deckMap || {})
+    .filter(([, qty]) => qty > 0)
+    .map(([id, qty]) => {
+      const role = findRole(id);
+      if (!role) return null;
+      return { faction: role.faction, wakes: role.wakeTiming !== 'mai', text: qty > 1 ? `${role.name} (${qty})` : role.name };
+    })
+    .filter(Boolean);
+  // prima i lupi e i loro alleati, poi i solitari, poi il villaggio (chi si sveglia di notte prima degli altri)
+  const order = ['Branco', 'Alleato dei Lupi', 'Solitario', 'Villaggio'];
+  parts.sort((a, b) => order.indexOf(a.faction) - order.indexOf(b.faction) || Number(b.wakes) - Number(a.wakes));
+  return `«In questa partita ci sono: ${joinNames(parts.map(p => p.text))}.»`;
+}
+
+/* ---------- Eventi a sorpresa ---------- */
+// phase 'night' = vale per la notte in cui esce; 'day' = vale per il giorno dopo quella notte
+const SURPRISE_EVENTS = [
+  { id: 'luna_rossa', icon: '🌕', name: 'Luna rossa', phase: 'night', effect: 'wolvesKillTwice',
+    text: 'Stanotte i lupi sbranano due volte.',
+    phrase: '«Stanotte la luna è rossa come il sangue: i lupi hanno doppia fame!»' },
+  { id: 'eclissi', icon: '🌑', name: 'Eclissi', phase: 'night', effect: 'wolvesNoKill',
+    text: 'Stanotte i lupi non possono uccidere.',
+    phrase: '«Un\'eclissi oscura la luna: stanotte i lupi restano a digiuno.»' },
+  { id: 'nebbia', icon: '🌫️', name: 'Nebbia', phase: 'night', effect: 'blindSeers',
+    text: 'Stanotte chi indaga (Veggente, Medium...) non vede nulla.',
+    phrase: '«Una nebbia fitta avvolge il villaggio: stanotte nessuno riesce a vedere lontano.»' },
+  { id: 'veglia', icon: '🕯️', name: 'Veglia funebre', phase: 'day', effect: 'revealNightDeaths',
+    text: 'Domattina si svela il ruolo di chi muore stanotte.',
+    phrase: '«Il villaggio veglia i suoi morti: domattina si scoprirà chi erano davvero.»',
+    today: '«Il villaggio veglia i suoi morti e scopre chi erano davvero.»' },
+  { id: 'festa', icon: '🎉', name: 'Festa al villaggio', phase: 'day', effect: 'noBurning',
+    text: 'Domani niente rogo: si festeggia.',
+    phrase: '«Domani è festa al villaggio: niente rogo, solo chiacchiere e sospetti!»',
+    today: '«Oggi è festa al villaggio: niente rogo!»' },
+  { id: 'processo_lampo', icon: '⚡', name: 'Processo lampo', phase: 'day', effect: 'shortDebate',
+    text: 'Domani il dibattito dura la metà.',
+    phrase: '«Un temporale si avvicina: domani bisognerà decidere in fretta!»',
+    today: '«Il temporale è vicino: oggi il dibattito dura la metà!»' }
+];
+const SURPRISE_EVENT_CHANCE = 0.4; // circa una notte su due/tre
+const EVENT_EFFECT_KEYS = ['wolvesKillTwice', 'wolvesNoKill', 'blindSeers', 'revealNightDeaths', 'noBurning', 'shortDebate'];
+
+function findSurpriseEvent(id) {
+  return SURPRISE_EVENTS.find(e => e.id === id) || null;
+}
+
+/** Effetti di un evento: { wolvesKillTwice, wolvesNoKill, ... } tutti false tranne il suo. */
+function eventEffects(event) {
+  const fx = {};
+  EVENT_EFFECT_KEYS.forEach(k => { fx[k] = !!event && event.effect === k; });
+  return fx;
+}
+
+/**
+ * Estrae l'evento di una notte: null (nessun evento) oppure un evento.
+ * rand() → numero tra 0 e 1. Mai lo stesso evento due volte di fila; excludeIds = eventi inutili
+ * (es. "Veglia funebre" quando i ruoli dei morti sono già svelati).
+ */
+function drawSurpriseEvent(rand, previousId, excludeIds, chance) {
+  const odds = typeof chance === 'number' ? chance : SURPRISE_EVENT_CHANCE;
+  if (rand() >= odds) return null;
+  return pickSurpriseEvent(rand, [previousId].concat(excludeIds || []));
+}
+
+/** Un evento qualsiasi, diverso da quelli indicati (per "pescane un altro"). */
+function pickSurpriseEvent(rand, excludeIds) {
+  const pool = SURPRISE_EVENTS.filter(e => !(excludeIds || []).includes(e.id));
+  if (!pool.length) return null;
+  return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
+}
+
+/* ---------- Voce del Narratore ---------- */
+/**
+ * Divide la frase di un ruolo in due: quella da dire quando si chiama il ruolo
+ * e la chiusura («...chiude gli occhi») da dire quando ha finito.
+ * Se non c'è una chiusura, tutta la frase è "open".
+ */
+function splitPhrase(phrase) {
+  const text = String(phrase || '').trim();
+  const cut = Math.max(text.lastIndexOf('...'), text.lastIndexOf('…'));
+  if (cut > 0) {
+    const sep = text.startsWith('...', cut) ? 3 : 1;
+    const tail = text.slice(cut + sep).trim();
+    if (/chiud/i.test(tail)) return { open: text.slice(0, cut + sep).trim(), close: tail };
+  }
+  return { open: text, close: '' };
+}
+
+/** Testo pulito per la sintesi vocale: senza virgolette, emoji e spazi doppi. */
+function speechText(text) {
+  return String(text || '')
+    .replace(/[«»"“”]/g, '')
+    .replace(/\p{Extended_Pictographic}|️|‍/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/* =========================================================================
+   10. GIOCATORI: COLORE, INIZIALE E NOMI GIÀ USATI (FUNZIONI PURE)
 ========================================================================= */
 // Colori dei giocatori: tenui, ben distinti tra loro e leggibili con il testo scuro sopra
 const PLAYER_COLORS = [

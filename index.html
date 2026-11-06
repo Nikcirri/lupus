@@ -1937,7 +1937,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      z-index: 900;
+      z-index: 450; /* sopra la pagina, sotto le finestre (menu, votazione) */
       background: rgba(16, 20, 42, 0.96);
       border-top: 1px solid var(--line);
       padding: 10px calc(14px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(14px + var(--safe-left));
@@ -2295,6 +2295,118 @@
     .death-shot-card .btn {
       align-self: flex-start;
     }
+
+    /* ---------- 1.6: frasi da leggere, consigli, eventi, livello del Narratore ---------- */
+    .guide-phrase {
+      position: relative;
+      padding-right: 52px;
+    }
+
+    .phrase-say {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid rgba(var(--rgb-moon), 0.35);
+      background: rgba(var(--rgb-moon), 0.08);
+      font-size: 0.95rem;
+      font-style: normal;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .phrase-say:active {
+      background: rgba(var(--rgb-moon), 0.25);
+    }
+
+    .guide-tip {
+      background: rgba(var(--rgb-sage), 0.07);
+      border: 1px dashed rgba(var(--rgb-sage), 0.5);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      font-size: 0.92rem;
+      line-height: 1.4;
+      color: var(--parchment);
+    }
+
+    /* Narratore esperto: solo frasi, scelte e risultati */
+    #screenNarrator.level-expert .guide-help,
+    #screenNarrator.level-expert .guide-tip,
+    #screenNarrator.level-expert .guide-note {
+      display: none;
+    }
+
+    .event-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px 14px;
+      border-radius: var(--radius-lg);
+      border: 1.5px solid rgba(var(--rgb-violet), 0.6);
+      background: rgba(var(--rgb-violet), 0.1);
+    }
+
+    .event-title {
+      font-family: var(--font-tale);
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--parchment-strong);
+    }
+
+    .event-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .options-more {
+      margin-top: 2px;
+    }
+
+    .level-switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .level-choice {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      min-height: 56px;
+      padding: 10px;
+      border-radius: var(--radius-md);
+      border: 1.5px solid var(--line-strong);
+      background: var(--ink-deep);
+      color: var(--parchment);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .level-choice strong {
+      white-space: nowrap;
+      font-size: clamp(0.88rem, 4vw, 1rem);
+    }
+
+    .level-choice span {
+      font-size: 0.8rem;
+      color: var(--mist);
+    }
+
+    .level-choice.active {
+      border-color: var(--moon);
+      background: rgba(var(--rgb-moon), 0.1);
+    }
+
+    .level-choice.active strong {
+      color: var(--moon);
+    }
   </style>
 </head>
 <body>
@@ -2413,6 +2525,44 @@
           </label>
         </div>
 
+        <details class="form-advanced options-more">
+          <summary>🎲 Varianti ed eventi a sorpresa</summary>
+          <div class="switch-row">
+          <div class="switch-info">
+            <div class="switch-title">🎲 Eventi a sorpresa</div>
+            <div class="switch-desc">Dalla seconda notte, ogni tanto succede qualcosa: Luna rossa, Nebbia, Festa al villaggio...</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleSurpriseEvents" onchange="onMatchOptionToggle('surpriseEvents', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+          <div class="switch-row">
+          <div class="switch-info">
+            <div class="switch-title">🪦 Svela il ruolo dei morti</div>
+            <div class="switch-desc">Quando qualcuno muore, si annuncia che ruolo aveva.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleRevealDead" onchange="onMatchOptionToggle('revealDead', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+          <div class="switch-row">
+          <div class="switch-info">
+            <div class="switch-title">📣 Annuncia i ruoli in gioco</div>
+            <div class="switch-desc">All'inizio si dice a tutti quali ruoli ci sono nel mazzo (non chi li ha).</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleDeckAnnounced" onchange="onMatchOptionToggle('deckAnnounced', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+          <div class="form-group">
+            <label class="form-label" for="optTieRule">⚖️ Se al voto c'è un pareggio</label>
+            <select id="optTieRule" class="select-field" onchange="onTieRuleChange(this.value)"></select>
+          </div>
+        </details>
+
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button class="btn" style="flex: 2;" onclick="openRoleEditorScreen()">
             <span>🛠️ Gestisci i ruoli (<span id="totalRolesDbCount">18</span>)</span>
@@ -2420,6 +2570,38 @@
           <button class="btn" style="flex: 1;" onclick="openGuideModal()">
             📖 Guida
           </button>
+        </div>
+      </div>
+
+      <!-- Il Narratore: livello, voce e suoni -->
+      <div class="card">
+        <div>
+          <div class="card-title">🎙️ Il Narratore</div>
+          <div class="card-subtitle">Valgono per tutte le partite.</div>
+        </div>
+        <div class="level-switch" role="group" aria-label="Livello del Narratore">
+          <button class="level-choice" data-level="beginner" onclick="setNarratorLevel('beginner')"><strong>🎓 Principiante</strong><span>consigli a ogni passo</span></button>
+          <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale</span></button>
+        </div>
+        <div class="switch-row">
+          <div class="switch-info">
+            <div class="switch-title">🗣️ Voce del Narratore</div>
+            <div class="switch-desc">Il telefono legge le frasi ad alta voce. Con 🔊 accanto a una frase la fai leggere quando vuoi.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleVoice" onchange="onNarratorPrefToggle('voiceOn', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="switch-row">
+          <div class="switch-info">
+            <div class="switch-title">🔔 Suoni</div>
+            <div class="switch-desc">Gufo quando cala la notte, ululato dei lupi, gallo all'alba, campanella per il voto.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleSounds" onchange="onNarratorPrefToggle('soundsOn', this.checked)">
+            <span class="slider"></span>
+          </label>
         </div>
       </div>
 
@@ -2737,6 +2919,61 @@
         </label>
       </div>
 
+      <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+          <div class="switch-info">
+            <div class="switch-title">🎲 Eventi a sorpresa</div>
+            <div class="switch-desc">Dalla prossima notte, ogni tanto succede qualcosa di speciale.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleSurpriseEventsInGame" onchange="onMatchOptionToggle('surpriseEvents', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+      <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+          <div class="switch-info">
+            <div class="switch-title">🪦 Svela il ruolo dei morti</div>
+            <div class="switch-desc">Al mattino e al rogo si annuncia che ruolo aveva chi muore.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleRevealDeadInGame" onchange="onMatchOptionToggle('revealDead', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+      <div class="form-group">
+        <label class="form-label" for="optTieRuleInGame">⚖️ Se al voto c'è un pareggio</label>
+        <select id="optTieRuleInGame" class="select-field" onchange="onTieRuleChange(this.value)"></select>
+      </div>
+
+      <div class="card-title" style="font-size: 1.05rem;">🎙️ Il Narratore</div>
+      <div class="level-switch" role="group" aria-label="Livello del Narratore">
+        <button class="level-choice" data-level="beginner" onclick="setNarratorLevel('beginner')"><strong>🎓 Principiante</strong><span>consigli a ogni passo</span></button>
+        <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale</span></button>
+      </div>
+
+      <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+          <div class="switch-info">
+            <div class="switch-title">🗣️ Voce del Narratore</div>
+            <div class="switch-desc">Il telefono legge le frasi ad alta voce.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleVoiceInGame" onchange="onNarratorPrefToggle('voiceOn', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+      <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+          <div class="switch-info">
+            <div class="switch-title">🔔 Suoni</div>
+            <div class="switch-desc">Gufo, ululato, gallo all'alba, campanella per il voto.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleSoundsInGame" onchange="onNarratorPrefToggle('soundsOn', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+
       <button class="btn btn-primary" onclick="confirmQuickRematch()">
         🔄 Rivincita Rapida (Stessi giocatori e ruoli)
       </button>
@@ -2996,6 +3233,7 @@
         <div>💀 Chi muore esce dal gioco: non parla più e non rivela il suo ruolo.</div>
         <div>🏆 Vince il <strong>Villaggio</strong> quando tutti i lupi sono morti; vince il <strong>Branco</strong> quando i lupi sono tanti quanti gli altri vivi. Alcuni solitari possono rubare la vittoria a tutti!</div>
         <div id="guideGhostRule">👻 <strong>Regola del Fantasma:</strong> il primo buono che muore diventa il Fantasma: resta in silenzio ma può ancora votare al rogo.</div>
+        <div id="guideVariants"></div>
       </div>
       <label id="guideFilterRow" class="switch-row" style="cursor: pointer;">
         <span class="switch-info">
@@ -3090,6 +3328,7 @@
   </div>
 
   <script src="./rules.js"></script>
+  <script src="./sounds.js"></script>
   <script src="./game.js"></script>
   <script type="module" src="/src/native.js"></script>
 </body>

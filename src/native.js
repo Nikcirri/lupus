@@ -5,8 +5,39 @@ import { App } from '@capacitor/app';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { Share } from '@capacitor/share';
 import { Clipboard } from '@capacitor/clipboard';
+import { TextToSpeech, QueueStrategy } from '@capacitor-community/text-to-speech';
 
 const isNative = Capacitor.isNativePlatform();
+const VOICE_LANG = 'it-IT';
+const VOICE_RATE = 0.95;
+
+// Sul telefono: la voce italiana c'è? (si controlla una volta sola)
+let italianVoice = null;
+function hasItalianVoice() {
+  if (!italianVoice) {
+    italianVoice = TextToSpeech.isLanguageSupported({ lang: VOICE_LANG })
+      .then(r => r.supported !== false)
+      .catch(() => true);
+  }
+  return italianVoice;
+}
+
+// Nel browser: voce del browser, se esiste
+function webSpeak(text) {
+  const synth = window.speechSynthesis;
+  if (!synth || typeof SpeechSynthesisUtterance === 'undefined') return Promise.resolve(false);
+  return new Promise(resolve => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = VOICE_LANG;
+    utterance.rate = VOICE_RATE;
+    const voice = synth.getVoices().find(v => v.lang && v.lang.toLowerCase().startsWith('it'));
+    if (voice) utterance.voice = voice;
+    utterance.onend = () => resolve(true);
+    utterance.onerror = e => resolve(e && (e.error === 'interrupted' || e.error === 'canceled'));
+    synth.cancel();
+    synth.speak(utterance);
+  });
+}
 
 window.LupusApp = {
   version: __APP_VERSION__,
@@ -45,6 +76,46 @@ window.LupusApp = {
   async readClipboard() {
     const { value } = await Clipboard.read();
     return typeof value === 'string' ? value : '';
+  },
+
+  /**
+   * Legge un testo ad alta voce in italiano e finisce quando ha smesso di parlare.
+   * Restituisce false se sul telefono non c'è una voce italiana.
+   */
+  async speak(text) {
+    if (!text) return true;
+    if (!isNative) return webSpeak(text);
+    if (!(await hasItalianVoice())) return false;
+    try {
+      await TextToSpeech.speak({ text, lang: VOICE_LANG, rate: VOICE_RATE, pitch: 1.0, volume: 1.0, category: 'playback', queueStrategy: QueueStrategy.Flush });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  /** Fa smettere di parlare la voce. */
+  async stopSpeaking() {
+    if (!isNative) {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      return;
+    }
+    try {
+      await TextToSpeech.stop();
+    } catch {
+      // niente da fermare
+    }
+  },
+
+  /** Apre la schermata di Android per scaricare la voce (sintesi vocale). */
+  async installVoice() {
+    if (!isNative) return;
+    italianVoice = null;
+    try {
+      await TextToSpeech.openInstall();
+    } catch {
+      // alcuni telefoni non hanno questa schermata
+    }
   },
 
   /** Manda l'app in secondo piano (come il tasto Home): la partita resta salvata. */

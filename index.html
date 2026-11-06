@@ -3,31 +3,60 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#121212">
+  <meta name="theme-color" content="#10142A">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="description" content="Lupus: l'assistente del Narratore per giocare a Lupus in Fabula. Funziona senza internet.">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/src/fonts.css">
   <title>Lupus</title>
   <style>
     :root {
-      --bg-main: #121212;
-      --bg-card: #1E1E1E;
-      --bg-elevated: #262626;
-      --border: #2C2C2C;
-      --border-light: #3A3A3A;
-      --text-main: #E0E0E0;
-      --text-muted: #9E9E9E;
-      --accent-primary: #3B82F6;
-      --accent-primary-active: #2563EB;
-      --accent-success: #10B981;
-      --accent-warning: #F59E0B;
-      --accent-danger: #EF4444;
-      --accent-purple: #8B5CF6;
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 16px;
+      /* Palette "notte al villaggio" (dall'icona: cielo, luna, lupo) */
+      --ink: #10142A;           /* cielo notturno: sfondo */
+      --ink-deep: #0B0E1F;      /* campi di testo, righe interne */
+      --surface: #171C38;       /* sezioni */
+      --surface-raised: #1F2547;/* pulsanti secondari, finestre */
+      --line: #2A3157;
+      --line-strong: #3A4374;
+      --moon: #F1DFA0;          /* azioni principali e selezioni */
+      --moon-deep: #D9C27C;
+      --parchment: #ECE6D3;     /* testo */
+      --parchment-strong: #FBF6E6;
+      --mist: #9CA3C4;          /* testo secondario */
+      --sky: #8D9BE6;           /* informazioni e promemoria */
+      --ember: #E8893C;         /* giorno, rogo, avvisi */
+      --wolf: #D9534A;          /* branco, morte */
+      --sage: #8CC08A;          /* villaggio, vivo, fatto */
+      --violet: #B39CF0;        /* solitari, fantasma */
+      --rgb-moon: 241, 223, 160;
+      --rgb-sky: 141, 155, 230;
+      --rgb-ember: 232, 137, 60;
+      --rgb-wolf: 217, 83, 74;
+      --rgb-sage: 140, 192, 138;
+      --rgb-violet: 179, 156, 240;
+      --rgb-rose: 226, 125, 168;
+      --font-tale: "Alegreya", Georgia, serif;
+      --font-ui: "Alegreya Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+
+      /* Nomi usati nel resto del codice */
+      --bg-main: var(--ink-deep);
+      --bg-card: var(--surface);
+      --bg-elevated: var(--surface-raised);
+      --border: var(--line);
+      --border-light: var(--line-strong);
+      --text-main: var(--parchment);
+      --text-muted: var(--mist);
+      --accent-primary: var(--moon);
+      --accent-primary-active: var(--moon-deep);
+      --accent-success: var(--sage);
+      --accent-warning: var(--ember);
+      --accent-danger: var(--wolf);
+      --accent-purple: var(--violet);
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
       /* Spazi di sicurezza per notch e barre di sistema (valori dati dall'app Android) */
       --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
       --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
@@ -45,11 +74,12 @@
     html, body {
       width: 100%;
       min-height: 100%;
-      background-color: var(--bg-main);
+      background-color: var(--ink);
       color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      font-size: 16px;
+      font-family: var(--font-ui);
+      font-size: 17px;
       line-height: 1.45;
+      font-feature-settings: "lnum" 1;
       overflow-x: hidden;
       user-select: none;
       -webkit-user-select: none;
@@ -83,7 +113,7 @@
       position: sticky;
       top: 0;
       z-index: 100;
-      background-color: rgba(18, 18, 18, 0.96);
+      background-color: rgba(16, 20, 42, 0.96);
       backdrop-filter: blur(8px);
       border-bottom: 1px solid var(--border);
       padding: calc(10px + var(--safe-top)) 14px 10px;
@@ -171,7 +201,7 @@
     .card-title {
       font-size: 1.05rem;
       font-weight: 700;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
       display: flex;
       align-items: center;
       gap: 6px;
@@ -214,7 +244,7 @@
     .btn-primary {
       background-color: var(--accent-primary);
       border-color: var(--accent-primary);
-      color: #FFFFFF;
+      color: var(--parchment-strong);
     }
 
     .btn-primary:active:not(:disabled) {
@@ -224,21 +254,21 @@
     .btn-success {
       background-color: var(--accent-success);
       border-color: var(--accent-success);
-      color: #052E16;
+      color: #13261A;
       font-weight: 700;
     }
 
     .btn-warning {
       background-color: var(--accent-warning);
       border-color: var(--accent-warning);
-      color: #1C1917;
+      color: #2A1708;
       font-weight: 700;
     }
 
     .btn-danger {
-      background-color: rgba(239, 68, 68, 0.15);
+      background-color: rgba(var(--rgb-wolf), 0.15);
       border-color: var(--accent-danger);
-      color: #FCA5A5;
+      color: #F0A49C;
     }
 
     .btn-sm {
@@ -252,6 +282,11 @@
     .input-row {
       display: flex;
       gap: 8px;
+    }
+
+    .input-row > .btn {
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .input-field, .select-field, .textarea-field {
@@ -348,7 +383,7 @@
     }
 
     .switch input:checked + .slider {
-      background-color: rgba(16, 185, 129, 0.25);
+      background-color: rgba(var(--rgb-sage), 0.25);
       border-color: var(--accent-success);
     }
 
@@ -430,7 +465,7 @@
 
     .tab-btn.active {
       background: var(--bg-card);
-      color: #FFFFFF;
+      color: var(--parchment-strong);
       border: 1px solid var(--border-light);
     }
 
@@ -455,7 +490,7 @@
 
     .preset-item.selected {
       border-color: var(--accent-primary);
-      background: rgba(59, 130, 246, 0.08);
+      background: rgba(var(--rgb-sky), 0.08);
     }
 
     .preset-header {
@@ -467,7 +502,7 @@
 
     .preset-name {
       font-weight: 700;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
       font-size: 1rem;
     }
 
@@ -579,27 +614,27 @@
     }
 
     .badge-villaggio {
-      background: rgba(16, 185, 129, 0.14);
-      border-color: rgba(16, 185, 129, 0.4);
-      color: #6EE7B7;
+      background: rgba(var(--rgb-sage), 0.14);
+      border-color: rgba(var(--rgb-sage), 0.4);
+      color: #B9DDB4;
     }
 
     .badge-branco {
-      background: rgba(239, 68, 68, 0.16);
-      border-color: rgba(239, 68, 68, 0.45);
-      color: #FCA5A5;
+      background: rgba(var(--rgb-wolf), 0.16);
+      border-color: rgba(var(--rgb-wolf), 0.45);
+      color: #F0A49C;
     }
 
     .badge-alleato {
-      background: rgba(245, 158, 11, 0.15);
-      border-color: rgba(245, 158, 11, 0.45);
-      color: #FCD34D;
+      background: rgba(var(--rgb-ember), 0.15);
+      border-color: rgba(var(--rgb-ember), 0.45);
+      color: #F2C584;
     }
 
     .badge-solitario {
-      background: rgba(139, 92, 246, 0.16);
-      border-color: rgba(139, 92, 246, 0.45);
-      color: #C4B5FD;
+      background: rgba(var(--rgb-violet), 0.16);
+      border-color: rgba(var(--rgb-violet), 0.45);
+      color: #CDBEF7;
     }
 
     /* Schermata 2 & 4: Passa il Telefono / Carta Ruolo */
@@ -625,7 +660,7 @@
     .role-big-name {
       font-size: 1.7rem;
       font-weight: 800;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
     }
 
     .role-info-box {
@@ -678,15 +713,15 @@
     }
 
     .phase-night {
-      background: rgba(59, 130, 246, 0.18);
-      border: 1px solid rgba(59, 130, 246, 0.45);
-      color: #93C5FD;
+      background: rgba(var(--rgb-sky), 0.18);
+      border: 1px solid rgba(var(--rgb-sky), 0.45);
+      color: #B4BEF3;
     }
 
     .phase-day {
-      background: rgba(245, 158, 11, 0.18);
-      border: 1px solid rgba(245, 158, 11, 0.45);
-      color: #FDE68A;
+      background: rgba(var(--rgb-ember), 0.18);
+      border: 1px solid rgba(var(--rgb-ember), 0.45);
+      color: #F6D39C;
     }
 
     .alive-counters {
@@ -703,7 +738,7 @@
 
     /* Banner Vittoria */
     .victory-banner {
-      background: rgba(16, 185, 129, 0.14);
+      background: rgba(var(--rgb-sage), 0.14);
       border: 2px solid var(--accent-success);
       border-radius: var(--radius-md);
       padding: 16px;
@@ -714,19 +749,19 @@
     }
 
     .victory-banner.wolves {
-      background: rgba(239, 68, 68, 0.15);
+      background: rgba(var(--rgb-wolf), 0.15);
       border-color: var(--accent-danger);
     }
 
     .victory-banner.solo {
-      background: rgba(139, 92, 246, 0.18);
+      background: rgba(var(--rgb-violet), 0.18);
       border-color: var(--accent-purple);
     }
 
     .victory-title {
       font-size: 1.15rem;
       font-weight: 800;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
     }
 
     .victory-actions {
@@ -755,7 +790,7 @@
 
     .scaletta-step.step-dead {
       border-left-color: var(--accent-warning);
-      background: rgba(245, 158, 11, 0.06);
+      background: rgba(var(--rgb-ember), 0.06);
     }
 
     .scaletta-step-header {
@@ -768,7 +803,7 @@
     .scaletta-role-name {
       font-weight: 700;
       font-size: 1rem;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
       display: flex;
       align-items: center;
       gap: 6px;
@@ -776,9 +811,9 @@
     }
 
     .scaletta-dead-alert {
-      background: rgba(239, 68, 68, 0.2);
+      background: rgba(var(--rgb-wolf), 0.2);
       border: 1px solid var(--accent-danger);
-      color: #FCA5A5;
+      color: #F0A49C;
       padding: 6px 10px;
       border-radius: 6px;
       font-size: 0.84rem;
@@ -791,7 +826,7 @@
       padding: 8px 10px;
       border-radius: 6px;
       font-style: italic;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
       font-size: 0.94rem;
     }
 
@@ -801,9 +836,9 @@
     }
 
     .scaletta-highlight {
-      background: rgba(59, 130, 246, 0.14);
-      border: 1px solid rgba(59, 130, 246, 0.4);
-      color: #BFDBFE;
+      background: rgba(var(--rgb-sky), 0.14);
+      border: 1px solid rgba(var(--rgb-sky), 0.4);
+      color: #C9D0F7;
       padding: 8px 10px;
       border-radius: 6px;
       font-size: 0.88rem;
@@ -827,7 +862,7 @@
       font-size: 1.5rem;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
     }
 
     .timer-display.expired {
@@ -859,13 +894,13 @@
     }
 
     .narrator-player-card.is-dead {
-      background: rgba(24, 24, 24, 0.65);
-      border-color: #222222;
+      background: rgba(11, 14, 31, 0.6);
+      border-color: var(--line);
     }
 
     .narrator-player-card.is-ghost {
-      border-color: rgba(139, 92, 246, 0.5);
-      background: rgba(139, 92, 246, 0.06);
+      border-color: rgba(var(--rgb-violet), 0.5);
+      background: rgba(var(--rgb-violet), 0.06);
     }
 
     .np-top {
@@ -891,7 +926,7 @@
     .np-name {
       font-size: 1.08rem;
       font-weight: 700;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
     }
 
     .is-dead .np-name {
@@ -925,33 +960,33 @@
     }
 
     .status-alive {
-      background: rgba(16, 185, 129, 0.15);
-      color: #6EE7B7;
-      border: 1px solid rgba(16, 185, 129, 0.35);
+      background: rgba(var(--rgb-sage), 0.15);
+      color: #B9DDB4;
+      border: 1px solid rgba(var(--rgb-sage), 0.35);
     }
 
     .status-dead {
-      background: rgba(239, 68, 68, 0.16);
-      color: #FCA5A5;
-      border: 1px solid rgba(239, 68, 68, 0.35);
+      background: rgba(var(--rgb-wolf), 0.16);
+      color: #F0A49C;
+      border: 1px solid rgba(var(--rgb-wolf), 0.35);
     }
 
     .status-ghost {
-      background: rgba(139, 92, 246, 0.22);
-      color: #DDD6FE;
-      border: 1px solid rgba(139, 92, 246, 0.5);
+      background: rgba(var(--rgb-violet), 0.22);
+      color: #DED3FB;
+      border: 1px solid rgba(var(--rgb-violet), 0.5);
     }
 
     .status-shield-prev {
-      background: #2A2A2A;
-      color: #BDBDBD;
-      border: 1px solid #484848;
+      background: var(--surface-raised);
+      color: var(--mist);
+      border: 1px solid var(--line-strong);
     }
 
     .status-active-badge {
-      background: rgba(59, 130, 246, 0.2);
-      color: #BFDBFE;
-      border: 1px solid rgba(59, 130, 246, 0.45);
+      background: rgba(var(--rgb-sky), 0.2);
+      color: #C9D0F7;
+      border: 1px solid rgba(var(--rgb-sky), 0.45);
     }
 
     .np-actions {
@@ -978,37 +1013,37 @@
     }
 
     .np-action-btn.active-shield {
-      background: rgba(59, 130, 246, 0.28);
-      border-color: #60A5FA;
+      background: rgba(var(--rgb-sky), 0.28);
+      border-color: var(--sky);
     }
 
     .np-action-btn.active-wolf {
-      background: rgba(239, 68, 68, 0.28);
-      border-color: #F87171;
+      background: rgba(var(--rgb-wolf), 0.28);
+      border-color: #E8786E;
     }
 
     .np-action-btn.active-flower {
-      background: rgba(236, 72, 153, 0.28);
-      border-color: #F472B6;
+      background: rgba(var(--rgb-rose), 0.28);
+      border-color: #E89BBE;
     }
 
     .np-action-btn.active-seer {
-      background: rgba(139, 92, 246, 0.28);
-      border-color: #A78BFA;
+      background: rgba(var(--rgb-violet), 0.28);
+      border-color: var(--violet);
     }
 
     .np-action-btn.active-pin {
-      background: rgba(245, 158, 11, 0.28);
-      border-color: #FBBF24;
+      background: rgba(var(--rgb-ember), 0.28);
+      border-color: var(--ember);
     }
 
     .np-action-btn.active-kill {
-      background: rgba(239, 68, 68, 0.35);
+      background: rgba(var(--rgb-wolf), 0.35);
       border-color: var(--accent-danger);
     }
 
     .np-action-btn.active-ghost {
-      background: rgba(139, 92, 246, 0.35);
+      background: rgba(var(--rgb-violet), 0.35);
       border-color: var(--accent-purple);
     }
 
@@ -1080,8 +1115,8 @@
     }
 
     .toast {
-      background: #262626;
-      color: #FFFFFF;
+      background: var(--surface-raised);
+      color: var(--parchment-strong);
       border: 1px solid var(--border-light);
       border-left: 4px solid var(--accent-primary);
       padding: 12px 14px;
@@ -1117,7 +1152,7 @@
       left: 0;
       right: 0;
       z-index: 90;
-      background: rgba(18, 18, 18, 0.96);
+      background: rgba(16, 20, 42, 0.96);
       backdrop-filter: blur(8px);
       border-top: 1px solid var(--border);
       padding: 10px calc(14px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(14px + var(--safe-left));
@@ -1145,7 +1180,7 @@
 
     .update-banner {
       border-color: var(--accent-primary);
-      background: rgba(59, 130, 246, 0.1);
+      background: rgba(var(--rgb-sky), 0.1);
     }
 
     .death-choice {
@@ -1234,7 +1269,7 @@
     .tally-bar {
       position: absolute;
       inset: 0 auto 0 0;
-      background: rgba(59, 130, 246, 0.18);
+      background: rgba(var(--rgb-sky), 0.18);
       pointer-events: none;
     }
 
@@ -1243,7 +1278,7 @@
     }
 
     .tally-leader .tally-bar {
-      background: rgba(245, 158, 11, 0.25);
+      background: rgba(var(--rgb-ember), 0.25);
     }
 
     .tally-name, .tally-votes {
@@ -1280,7 +1315,7 @@
 
     .summary-turn-title {
       font-weight: 800;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
     }
 
     /* Guida dei ruoli */
@@ -1322,7 +1357,7 @@
     .guide-role-name {
       font-weight: 700;
       font-size: 1rem;
-      color: #FFFFFF;
+      color: var(--parchment-strong);
     }
 
     .guide-role-icon {
@@ -1346,6 +1381,348 @@
       height: 22px;
       accent-color: var(--accent-primary);
     }
+    /* =====================================================================
+       STILE GRAFICO "NOTTE AL VILLAGGIO"
+       Titoli e nomi in Alegreya (carattere da racconto), cielo notturno come sfondo,
+       luna per le azioni principali, colore della fazione su giocatori e carte ruolo.
+    ===================================================================== */
+
+    /* Tipografia da racconto */
+    .top-bar-title, .card-title, .role-big-name, .phase-badge, .victory-title, .preset-name,
+    .np-name, .scaletta-role-name, .guide-role-name, .summary-turn-title, .timer-display {
+      font-family: var(--font-tale);
+    }
+
+    .top-bar {
+      background-color: rgba(16, 20, 42, 0.94);
+    }
+
+    .top-bar-title {
+      font-size: 1.32rem;
+      font-weight: 800;
+      color: var(--parchment-strong);
+    }
+
+    #headerIcon {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+
+    .card {
+      border-radius: var(--radius-lg);
+      padding: 16px;
+    }
+
+    .card-title {
+      font-size: 1.24rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .card-subtitle {
+      font-size: 0.92rem;
+    }
+
+    /* Etichette in tondo e corsivo, non in maiuscolo */
+    .role-info-label {
+      text-transform: none;
+      letter-spacing: 0;
+      font-family: var(--font-tale);
+      font-style: italic;
+      font-weight: 400;
+      font-size: 1rem;
+      color: var(--moon);
+    }
+
+    /* Pulsanti: luna per l'azione principale, brace per il giorno e il rogo */
+    .btn {
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .btn-primary {
+      background-color: var(--moon);
+      border-color: var(--moon);
+      color: #1B1733;
+    }
+
+    .btn-warning {
+      color: #2A1708;
+    }
+
+    .btn-success {
+      color: #13261A;
+    }
+
+    .btn-danger {
+      background-color: rgba(var(--rgb-wolf), 0.1);
+      border-color: rgba(var(--rgb-wolf), 0.65);
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--moon);
+      outline-offset: 2px;
+    }
+
+    .switch input:checked + .slider {
+      background-color: rgba(var(--rgb-moon), 0.2);
+      border-color: var(--moon);
+    }
+
+    .switch input:checked + .slider:before {
+      background-color: var(--moon);
+    }
+
+    .preset-item.selected {
+      border-color: var(--moon);
+      background: rgba(var(--rgb-moon), 0.07);
+    }
+
+    .player-chip-num, .qty-val, .alive-counters, .badge {
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+
+    /* ---------- Il cielo della fase: notte stellata o alba ---------- */
+    .narrator-stats-bar {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      border: none;
+      border-radius: var(--radius-lg);
+      padding: 18px 16px 16px;
+      min-height: 168px;
+      justify-content: flex-end;
+      background: #1B2350;
+    }
+
+    .narrator-stats-bar::before,
+    .narrator-stats-bar::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      transition: opacity 0.9s ease;
+    }
+
+    /* Notte: luna piena in alto a destra e qualche stella */
+    .narrator-stats-bar::before {
+      background:
+        radial-gradient(circle at calc(100% - 52px) 46px, #F6E7B0 0 24px, rgba(246, 231, 176, 0.22) 25px, rgba(246, 231, 176, 0) 64px),
+        radial-gradient(circle at calc(100% - 60px) 40px, rgba(214, 196, 132, 0.9) 0 4px, transparent 5px),
+        radial-gradient(circle at calc(100% - 44px) 54px, rgba(214, 196, 132, 0.8) 0 5px, transparent 6px),
+        radial-gradient(1.3px 1.3px at 14% 24%, #FFFFFF 99%, transparent),
+        radial-gradient(1px 1px at 33% 12%, #FFFFFF 99%, transparent),
+        radial-gradient(1.2px 1.2px at 52% 30%, #FFFFFF 99%, transparent),
+        radial-gradient(1px 1px at 66% 14%, #FFFFFF 99%, transparent),
+        radial-gradient(1px 1px at 44% 52%, rgba(255, 255, 255, 0.7) 99%, transparent),
+        radial-gradient(1px 1px at 8% 58%, rgba(255, 255, 255, 0.7) 99%, transparent),
+        linear-gradient(180deg, #252F69 0%, #171C3F 100%);
+      opacity: 1;
+    }
+
+    /* Giorno: alba calda con il sole */
+    .narrator-stats-bar::after {
+      background:
+        radial-gradient(circle at calc(100% - 52px) 50px, #FFF4D6 0 24px, rgba(255, 228, 165, 0.5) 25px, rgba(255, 228, 165, 0) 74px),
+        linear-gradient(180deg, #F7CB86 0%, #EC9A5F 58%, #C66A63 100%);
+      opacity: 0;
+    }
+
+    .narrator-stats-bar.is-day::before { opacity: 0; }
+    .narrator-stats-bar.is-day::after { opacity: 1; }
+
+    .stats-top-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+    }
+
+    .phase-badge,
+    .phase-badge.phase-night,
+    .phase-badge.phase-day {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 2.1rem;
+      font-weight: 800;
+      line-height: 1.05;
+      color: var(--parchment-strong);
+    }
+
+    .is-day .phase-badge { color: #2A1708; }
+
+    .alive-counters {
+      background: rgba(11, 14, 31, 0.45);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: var(--parchment-strong);
+      font-weight: 500;
+    }
+
+    .is-day .alive-counters {
+      background: rgba(255, 255, 255, 0.32);
+      border-color: rgba(42, 23, 8, 0.18);
+      color: #2A1708;
+    }
+
+    /* Di giorno il pulsante "Vai alla notte" è color inchiostro, ben leggibile sull'alba */
+    .is-day #btnTogglePhase {
+      background-color: var(--ink);
+      border-color: var(--ink);
+      color: var(--parchment-strong);
+    }
+
+    /* ---------- Scaletta del Narratore ---------- */
+    .scaletta-step {
+      border-left-color: var(--sky);
+      border-radius: var(--radius-md);
+    }
+
+    .scaletta-role-name {
+      font-size: 1.14rem;
+    }
+
+    /* Le frasi da dire ad alta voce sembrano un copione */
+    .scaletta-phrase {
+      font-family: var(--font-tale);
+      font-size: 1.06rem;
+      line-height: 1.4;
+      background: rgba(var(--rgb-moon), 0.06);
+      border: none;
+      border-left: 2px solid rgba(var(--rgb-moon), 0.55);
+      border-radius: 0 8px 8px 0;
+    }
+
+    .scaletta-highlight {
+      font-weight: 500;
+    }
+
+    .timer-display {
+      font-size: 2rem;
+      font-weight: 700;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+
+    /* ---------- Giocatori: striscia con il colore della fazione ---------- */
+    .faction-villaggio { --faction-color: var(--sage); --faction-rgb: var(--rgb-sage); }
+    .faction-branco { --faction-color: var(--wolf); --faction-rgb: var(--rgb-wolf); }
+    .faction-alleato { --faction-color: var(--ember); --faction-rgb: var(--rgb-ember); }
+    .faction-solitario { --faction-color: var(--violet); --faction-rgb: var(--rgb-violet); }
+
+    .narrator-player-card {
+      border-left: 4px solid var(--faction-color, var(--line-strong));
+      border-radius: var(--radius-md);
+    }
+
+    .narrator-player-card.is-dead {
+      opacity: 0.6;
+    }
+
+    .np-name {
+      font-size: 1.22rem;
+    }
+
+    .np-action-btn {
+      height: 42px;
+      border-radius: 10px;
+      background: var(--surface);
+      border-color: var(--line);
+    }
+
+    /* ---------- Carta del ruolo, come una carta da gioco ---------- */
+    /* Colore predefinito (luna) se la fazione non è ancora nota: :where non pesa sulla priorità */
+    :where(.hold-reveal-card) {
+      --faction-color: var(--moon);
+      --faction-rgb: var(--rgb-moon);
+    }
+
+    .hold-reveal-card {
+      border: 2px solid var(--faction-color);
+      border-radius: 22px;
+      padding: 30px 20px 22px;
+      background:
+        radial-gradient(120% 60% at 50% 0%, rgba(var(--faction-rgb), 0.16), transparent 62%),
+        var(--surface);
+      box-shadow:
+        inset 0 0 0 6px var(--surface),
+        inset 0 0 0 7px rgba(var(--faction-rgb), 0.4),
+        0 18px 50px rgba(0, 0, 0, 0.5);
+    }
+
+    .hold-reveal-card .role-big-icon {
+      width: 120px;
+      height: 120px;
+      margin: 4px 0;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4rem;
+      background: radial-gradient(circle at 50% 38%, rgba(var(--faction-rgb), 0.32), rgba(var(--faction-rgb), 0.06) 72%);
+      border: 1.5px solid rgba(var(--faction-rgb), 0.55);
+    }
+
+    .role-big-name {
+      font-size: 2.1rem;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    .hold-reveal-card .role-info-box {
+      border: none;
+      background: rgba(11, 14, 31, 0.7);
+    }
+
+    #distPlayerNameCover,
+    #aaCoverPlayerName {
+      font-size: 2.4rem;
+    }
+
+    .hold-btn {
+      box-shadow: 0 0 0 6px rgba(var(--rgb-moon), 0.12);
+      transition: box-shadow 0.2s, transform 0.1s;
+    }
+
+    .hold-btn:active {
+      box-shadow: 0 0 0 12px rgba(var(--rgb-moon), 0.2);
+    }
+
+    /* ---------- Finestre, avvisi, vittoria ---------- */
+    .modal-overlay {
+      background-color: rgba(7, 9, 20, 0.78);
+    }
+
+    .modal-box {
+      border-radius: 22px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    }
+
+    .toast {
+      border-left-color: var(--moon);
+      font-weight: 500;
+    }
+
+    .victory-banner {
+      border-width: 1.5px;
+    }
+
+    .victory-title {
+      font-size: 1.3rem;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .bottom-sticky-bar {
+      background: rgba(16, 20, 42, 0.95);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        transition: none !important;
+        animation: none !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1354,7 +1731,7 @@
     <!-- BARRA SUPERIORE FISSA -->
     <header class="top-bar">
       <div class="top-bar-title">
-        <span id="headerIcon">🐺</span>
+        <img id="headerIcon" src="./favicon.svg" alt="" width="30" height="30">
         <span id="headerTitle">Lupus</span>
       </div>
       <div class="top-bar-actions">
@@ -1389,7 +1766,7 @@
       </div>
 
       <!-- Banner Riprendi Partita in Corso (visibile se esiste una partita salvata) -->
-      <div id="resumeBanner" class="card" style="display: none; border-color: var(--accent-success); background: rgba(16, 185, 129, 0.08);">
+      <div id="resumeBanner" class="card" style="display: none; border-color: var(--accent-success); background: rgba(var(--rgb-sage), 0.08);">
         <div class="card-header">
           <div class="card-title">▶️ Partita in Corso Trovata</div>
           <span id="resumePhaseBadge" class="badge badge-villaggio">In corso</span>
@@ -1409,7 +1786,7 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">👥 Giocatori al Tavolo (<span id="playerCountLabel">0</span>)</div>
+            <div class="card-title"><span>👥 Giocatori al tavolo (<span id="playerCountLabel">0</span>)</span></div>
             <div class="card-subtitle">Escluso il Narratore • Minimo 5 giocatori</div>
           </div>
           <button class="btn btn-sm btn-danger" id="btnClearPlayers" onclick="confirmClearPlayers()" style="display:none;">
@@ -1442,7 +1819,7 @@
 
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button class="btn" style="flex: 2;" onclick="openRoleEditorScreen()">
-            🛠️ Gestisci / Crea Ruoli (<span id="totalRolesDbCount">13</span>)
+            <span>🛠️ Gestisci i ruoli (<span id="totalRolesDbCount">13</span>)</span>
           </button>
           <button class="btn" style="flex: 1;" onclick="openGuideModal()">
             📖 Guida
@@ -1503,7 +1880,7 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">🛠️ Gestisci / Crea Ruoli</div>
+            <div class="card-title">🛠️ Gestisci i ruoli</div>
             <div class="card-subtitle">Modifica i 13 ruoli base o creane di nuovi</div>
           </div>
           <button class="btn btn-sm" onclick="closeRoleEditorScreen()">⬅️ Indietro</button>

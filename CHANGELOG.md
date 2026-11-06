@@ -1,5 +1,17 @@
 # Novità
 
+## [1.2.0] - 2026-11-06
+
+Nuova veste grafica "notte al villaggio", con i colori dell'icona.
+
+- Colori: cielo notturno blu inchiostro, giallo luna per le azioni principali, brace per il giorno e il rogo; rosso per i lupi, verde salvia per il villaggio, viola per i solitari.
+- Caratteri da racconto (Alegreya) per titoli, nomi e ruoli, inclusi nell'app: funzionano senza internet.
+- La barra della fase diventa un cielo: notte stellata con la luna, alba con il sole di giorno.
+- Carta del ruolo come una carta da gioco, con cornice e medaglione nel colore della fazione.
+- Ogni giocatore nella lista ha una striscia con il colore della sua fazione.
+- Le frasi da dire ad alta voce nella scaletta sono in corsivo, come un copione.
+- Icona dell'app nella barra in alto; pulsante "Gestisci i ruoli" più corto; piccole correzioni di impaginazione.
+
 ## [1.1.0] - 2026-11-06
 
 - Pulsante **↩️ Fase** in alto al posto dello schermo intero: torna alla fase precedente, anche più volte di fila (fino a 6 fasi).

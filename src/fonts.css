@@ -1,0 +1,9 @@
+/* Caratteri inclusi nell'app (funzionano senza internet).
+   Alegreya: serif nato per i racconti, per titoli, nomi e ruoli.
+   Alegreya Sans: la sua versione senza grazie, per testi e pulsanti. */
+@import '@fontsource/alegreya/latin-700.css';
+@import '@fontsource/alegreya/latin-800.css';
+@import '@fontsource/alegreya/latin-400-italic.css';
+@import '@fontsource/alegreya-sans/latin-400.css';
+@import '@fontsource/alegreya-sans/latin-500.css';
+@import '@fontsource/alegreya-sans/latin-700.css';

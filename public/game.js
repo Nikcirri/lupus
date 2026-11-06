@@ -492,7 +492,7 @@ function renderPresetsList() {
         <span class="preset-turns">⏱️ ${preset.turns}</span>
       </div>
       <div class="preset-roles">${roleStrings}</div>
-      ${missingRoles.length ? `<div class="card-subtitle" style="color: var(--accent-warning);">⚠️ Usa ruoli che hai eliminato (${escapeHtml(missingRoles.join(', '))}). Ripristinali da "Gestisci / Crea Ruoli".</div>` : ''}
+      ${missingRoles.length ? `<div class="card-subtitle" style="color: var(--accent-warning);">⚠️ Usa ruoli che hai eliminato (${escapeHtml(missingRoles.join(', '))}). Ripristinali da "Gestisci i ruoli".</div>` : ''}
     `;
     container.appendChild(item);
   });
@@ -616,6 +616,14 @@ function updateSetupDeckCounters() {
     stickyStatus.style.color = 'var(--accent-warning)';
     badge.className = 'badge badge-alleato';
   }
+}
+
+// Classe con il colore della fazione (striscia dei giocatori, cornice della carta ruolo)
+function getFactionClass(faction) {
+  if (faction === 'Villaggio') return 'faction-villaggio';
+  if (faction === 'Branco') return 'faction-branco';
+  if (faction === 'Alleato dei Lupi') return 'faction-alleato';
+  return 'faction-solitario';
 }
 
 function getFactionBadgeClass(faction) {
@@ -944,8 +952,10 @@ function renderNarratorDashboard() {
   // Aggiorna titolo e badge fase
   document.getElementById('headerTitle').textContent = isNight ? `🌙 Notte ${turn}` : `☀️ Giorno ${turn}`;
 
+  // Il cielo della barra di fase mostra la luna di notte e l'alba di giorno
+  document.querySelector('.narrator-stats-bar').classList.toggle('is-day', !isNight);
   const phaseBadge = document.getElementById('narratorPhaseBadge');
-  phaseBadge.textContent = isNight ? `🌙 Notte ${turn}` : `☀️ Giorno ${turn}`;
+  phaseBadge.textContent = isNight ? `Notte ${turn}` : `Giorno ${turn}`;
   phaseBadge.className = 'phase-badge ' + (isNight ? 'phase-night' : 'phase-day');
 
   const btnPhase = document.getElementById('btnTogglePhase');
@@ -1524,7 +1534,7 @@ function renderNarratorPlayersList() {
     const wasCopione = p.originalRoleId === 'copione' && p.roleId !== 'copione';
 
     const card = document.createElement('div');
-    card.className = 'narrator-player-card' + (p.isDead ? ' is-dead' : '') + (p.isGhost ? ' is-ghost' : '');
+    card.className = 'narrator-player-card ' + getFactionClass(role.faction) + (p.isDead ? ' is-dead' : '') + (p.isGhost ? ' is-ghost' : '');
     card.innerHTML = `
       <div class="np-top">
         <div class="np-identity">
@@ -2196,6 +2206,8 @@ function setupHoldToReveal(button, show, hide) {
 
 function fillRoleCard(prefix, player) {
   const role = getRoleById(player.roleId);
+  const overlay = document.getElementById(prefix === 'dist' ? 'distStepReveal' : 'aaStepCard');
+  overlay.querySelector('.hold-reveal-card').className = 'pass-card hold-reveal-card ' + getFactionClass(role.faction);
   document.getElementById(prefix + 'PlayerName').textContent = player.name;
   document.getElementById(prefix + 'RoleIcon').textContent = role.icon;
   document.getElementById(prefix + 'RoleName').textContent = role.name;
@@ -2358,7 +2370,7 @@ function updateShareCount() {
 function buildShareMessage(roles) {
   const names = roles.map(r => `${r.icon} ${r.name}`).join(', ');
   return `🐺 Ruoli per Lupus (${roles.length}): ${names}\n` +
-    `Per aggiungerli: apri Lupus → 🛠️ Gestisci / Crea Ruoli → 📥 Importa ruoli e incolla tutto questo messaggio.\n\n` +
+    `Per aggiungerli: apri Lupus → 🛠️ Gestisci i ruoli → 📥 Importa ruoli e incolla tutto questo messaggio.\n\n` +
     encodeRolesShare(roles);
 }
 

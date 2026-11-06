@@ -216,7 +216,7 @@ def main():
         check(page.locator("#screenSetup").is_visible(), "torna al setup")
 
         print("Ruoli e informazioni")
-        page.click("text=Gestisci / Crea Ruoli")
+        page.click("text=Gestisci i ruoli")
         page.click("text=Crea Nuovo Ruolo")
         page.fill("#rfIcon", "🧑‍🌾")
         page.fill("#rfName", "Mugnaio")

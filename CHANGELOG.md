@@ -1,5 +1,17 @@
 # Novità
 
+## [1.6.0] - 2026-11-07
+
+Atmosfera, varianti e un Narratore su misura.
+
+- Voce del Narratore: il telefono legge le frasi ad alta voce, passo dopo passo. Quando tocchi Avanti dice anche «...chiude gli occhi». Con 🔊 accanto a ogni frase la fai leggere quando vuoi.
+- Suoni: il gufo quando cala la notte, l'ululato dei lupi, il gallo all'alba, la campanella per il voto e alla fine del timer, una fanfara per la vittoria.
+- Narratore principiante o esperto: il principiante ha un consiglio a ogni passo, l'esperto vede solo l'essenziale.
+- Eventi a sorpresa: dalla seconda notte, ogni tanto succede qualcosa. Luna rossa (i lupi sbranano due volte), Eclissi (i lupi non uccidono), Nebbia (chi indaga non vede), Veglia funebre, Festa al villaggio (niente rogo) e Processo lampo (dibattito più corto).
+- Varianti: puoi scegliere cosa succede con un pareggio al voto (ballottaggio, nessuno al rogo o decide il Sindaco), svelare il ruolo di chi muore e annunciare all'inizio i ruoli in gioco.
+- Le nuove opzioni sono nella schermata iniziale ("Varianti ed eventi a sorpresa" e "Il Narratore") e nel menu ⚙️ durante la partita.
+- Sistemato: la barra in basso della guida non copre più il menu ⚙️ e la votazione.
+
 ## [1.5.0] - 2026-11-06
 
 Cinque ruoli nuovi, preset rifatti e partite più equilibrate.

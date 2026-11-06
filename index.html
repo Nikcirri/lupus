@@ -418,19 +418,6 @@
       gap: 8px;
     }
 
-    .player-chip-num {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-
     .player-chip-remove {
       background: transparent;
       border: none;
@@ -770,46 +757,6 @@
       gap: 8px;
     }
 
-    /* Scaletta del Narratore */
-    .scaletta-step {
-      background: var(--bg-main);
-      border: 1px solid var(--border);
-      border-left: 4px solid var(--accent-primary);
-      border-radius: var(--radius-sm);
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      transition: opacity 0.15s;
-    }
-
-    .scaletta-step.step-done {
-      opacity: 0.55;
-      border-left-color: var(--accent-success);
-    }
-
-    .scaletta-step.step-dead {
-      border-left-color: var(--accent-warning);
-      background: rgba(var(--rgb-ember), 0.06);
-    }
-
-    .scaletta-step-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
-    .scaletta-role-name {
-      font-weight: 700;
-      font-size: 1rem;
-      color: var(--parchment-strong);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
     .scaletta-dead-alert {
       background: rgba(var(--rgb-wolf), 0.2);
       border: 1px solid var(--accent-danger);
@@ -818,21 +765,6 @@
       border-radius: 6px;
       font-size: 0.84rem;
       font-weight: 700;
-    }
-
-    .scaletta-phrase {
-      background: var(--bg-card);
-      border: 1px dashed var(--border-light);
-      padding: 8px 10px;
-      border-radius: 6px;
-      font-style: italic;
-      color: var(--parchment-strong);
-      font-size: 0.94rem;
-    }
-
-    .scaletta-note {
-      font-size: 0.84rem;
-      color: var(--text-muted);
     }
 
     .scaletta-highlight {
@@ -934,15 +866,6 @@
       color: var(--text-muted);
     }
 
-    .np-role {
-      font-size: 0.88rem;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
     .np-badges {
       display: flex;
       flex-wrap: wrap;
@@ -977,12 +900,6 @@
       border: 1px solid rgba(var(--rgb-violet), 0.5);
     }
 
-    .status-shield-prev {
-      background: var(--surface-raised);
-      color: var(--mist);
-      border: 1px solid var(--line-strong);
-    }
-
     .status-active-badge {
       background: rgba(var(--rgb-sky), 0.2);
       color: #C9D0F7;
@@ -1010,26 +927,6 @@
 
     .np-action-btn:active {
       transform: scale(0.93);
-    }
-
-    .np-action-btn.active-shield {
-      background: rgba(var(--rgb-sky), 0.28);
-      border-color: var(--sky);
-    }
-
-    .np-action-btn.active-wolf {
-      background: rgba(var(--rgb-wolf), 0.28);
-      border-color: #E8786E;
-    }
-
-    .np-action-btn.active-flower {
-      background: rgba(var(--rgb-rose), 0.28);
-      border-color: #E89BBE;
-    }
-
-    .np-action-btn.active-seer {
-      background: rgba(var(--rgb-violet), 0.28);
-      border-color: var(--violet);
     }
 
     .np-action-btn.active-pin {
@@ -1102,7 +999,7 @@
     /* Toast Notifiche */
     .toast-container {
       position: fixed;
-      bottom: calc(96px + var(--safe-bottom));
+      bottom: calc(150px + var(--safe-bottom));
       left: 50%;
       transform: translateX(-50%);
       z-index: 2000;
@@ -1381,6 +1278,7 @@
       height: 22px;
       accent-color: var(--accent-primary);
     }
+
     /* =====================================================================
        STILE GRAFICO "NOTTE AL VILLAGGIO"
        Titoli e nomi in Alegreya (carattere da racconto), cielo notturno come sfondo,
@@ -1389,7 +1287,7 @@
 
     /* Tipografia da racconto */
     .top-bar-title, .card-title, .role-big-name, .phase-badge, .victory-title, .preset-name,
-    .np-name, .scaletta-role-name, .guide-role-name, .summary-turn-title, .timer-display {
+    .np-name, .guide-role-name, .summary-turn-title, .timer-display {
       font-family: var(--font-tale);
     }
 
@@ -1480,7 +1378,7 @@
       background: rgba(var(--rgb-moon), 0.07);
     }
 
-    .player-chip-num, .qty-val, .alive-counters, .badge {
+    .qty-val, .alive-counters, .badge {
       font-variant-numeric: lining-nums tabular-nums;
     }
 
@@ -1564,28 +1462,6 @@
       background: rgba(255, 255, 255, 0.32);
       border-color: rgba(42, 23, 8, 0.18);
       color: #2A1708;
-    }
-
-
-    /* ---------- Scaletta del Narratore ---------- */
-    .scaletta-step {
-      border-left-color: var(--sky);
-      border-radius: var(--radius-md);
-    }
-
-    .scaletta-role-name {
-      font-size: 1.14rem;
-    }
-
-    /* Le frasi da dire ad alta voce sembrano un copione */
-    .scaletta-phrase {
-      font-family: var(--font-tale);
-      font-size: 1.06rem;
-      line-height: 1.4;
-      background: rgba(var(--rgb-moon), 0.06);
-      border: none;
-      border-left: 2px solid rgba(var(--rgb-moon), 0.55);
-      border-radius: 0 8px 8px 0;
     }
 
     .scaletta-highlight {
@@ -1709,6 +1585,17 @@
 
     .bottom-sticky-bar {
       background: rgba(16, 20, 42, 0.95);
+    }
+
+    .btn-label {
+      font-size: 0.82rem;
+    }
+
+    /* Telefoni molto stretti: nella barra in alto restano solo le icone */
+    @media (max-width: 360px) {
+      .top-bar .btn-label {
+        display: none;
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -1945,11 +1832,6 @@
       grid-column: 1 / -1;
     }
 
-    .guide-main-action {
-      min-height: 58px;
-      font-size: 1.08rem;
-    }
-
     .check-row {
       display: flex;
       align-items: center;
@@ -1975,6 +1857,209 @@
       font-weight: 700;
       color: var(--parchment);
     }
+    /* ---------- Cerchietto colorato con l'iniziale del giocatore ---------- */
+    .avatar {
+      --av: #9CA3C4;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--av);
+      color: #17142B;
+      font-family: var(--font-ui);
+      font-weight: 800;
+      font-size: 0.9rem;
+      line-height: 1;
+      flex-shrink: 0;
+      vertical-align: middle;
+    }
+
+    .avatar-sm {
+      width: 22px;
+      height: 22px;
+      font-size: 0.72rem;
+    }
+
+    .avatar-lg {
+      width: 72px;
+      height: 72px;
+      font-size: 2rem;
+      box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.06);
+    }
+
+    .target-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .target-btn.selected .avatar {
+      box-shadow: 0 0 0 2px #1B1733;
+    }
+
+    /* ---------- Nomi suggeriti ---------- */
+    .name-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .name-suggestions-label {
+      font-size: 0.85rem;
+      color: var(--mist);
+      margin-right: 2px;
+    }
+
+    .name-suggestion {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px dashed var(--line-strong);
+      background: transparent;
+      color: var(--parchment);
+      border-radius: 999px;
+      padding: 5px 10px 5px 5px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .name-suggestion-forget {
+      padding: 5px 9px;
+    }
+
+    /* ---------- Barra fissa in basso della guida ---------- */
+    .guide-bottom-bar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 900;
+      background: rgba(16, 20, 42, 0.96);
+      border-top: 1px solid var(--line);
+      padding: 10px calc(14px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(14px + var(--safe-left));
+      backdrop-filter: blur(8px);
+    }
+
+    .guide-bottom-bar .guide-nav {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .guide-bottom-bar .guide-next {
+      min-height: 54px;
+    }
+
+    /* ---------- Avviso con "Annulla" ---------- */
+    .undo-toast {
+      position: fixed;
+      left: 50%;
+      bottom: calc(92px + var(--safe-bottom));
+      transform: translate(-50%, 20px);
+      width: min(92vw, 520px);
+      z-index: 2500;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 10px 10px 14px;
+      background: var(--surface-raised);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-md);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      overflow: hidden;
+      transition: opacity 0.15s, transform 0.15s, visibility 0s linear 0.15s;
+    }
+
+    .undo-toast.visible {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translate(-50%, 0);
+      transition: opacity 0.15s, transform 0.15s, visibility 0s;
+    }
+
+    #undoToastText {
+      flex: 1;
+      font-weight: 500;
+    }
+
+    .undo-toast-btn {
+      border: none;
+      background: var(--moon);
+      color: #1B1733;
+      font-weight: 800;
+      font-size: 0.95rem;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-family: var(--font-ui);
+    }
+
+    .undo-toast-progress {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      height: 3px;
+      width: 100%;
+      background: var(--moon);
+      transform-origin: left;
+    }
+
+    .undo-toast.visible .undo-toast-progress {
+      animation: undo-countdown 2s linear forwards;
+    }
+
+    @keyframes undo-countdown {
+      from { transform: scaleX(1); }
+      to { transform: scaleX(0); }
+    }
+
+    /* ---------- Novità e link per gli amici ---------- */
+    .whatsnew-head {
+      font-family: var(--font-tale);
+      font-weight: 700;
+      font-size: 1.12rem;
+      color: var(--parchment-strong);
+    }
+
+    .whatsnew-intro {
+      font-style: italic;
+      color: var(--mist);
+      margin-top: 2px;
+    }
+
+    .whatsnew-list {
+      margin: 6px 0 0 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.95rem;
+    }
+
+    .info-share {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      text-align: center;
+      background: var(--ink-deep);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 14px;
+    }
+
+    .info-qr {
+      width: 180px;
+      height: 180px;
+      border-radius: 12px;
+      background: #FBF6E6;
+    }
   </style>
 </head>
 <body>
@@ -1987,11 +2072,11 @@
         <span id="headerTitle">Lupus</span>
       </div>
       <div class="top-bar-actions">
-        <button id="btnAntiAmnesiaTop" class="icon-btn" style="display: none;" onclick="openAntiAmnesiaSelector()" title="Anti-Amnesia">
-          👁️ <span style="font-size:0.82rem;">Ruoli</span>
+        <button id="btnAntiAmnesiaTop" class="icon-btn" style="display: none;" onclick="openAntiAmnesiaSelector()" title="Mostra di nuovo il ruolo a un giocatore" aria-label="Mostra di nuovo il ruolo a un giocatore">
+          👁️ <span class="btn-label">Ruoli</span>
         </button>
         <button id="btnUndoTop" class="icon-btn" style="display: none;" onclick="undoPhaseChange()" title="Torna alla fase precedente" aria-label="Torna alla fase precedente">
-          ↩️ <span style="font-size:0.82rem;">Fase</span>
+          ↩️ <span class="btn-label">Fase</span>
         </button>
         <button id="btnInfoTop" class="icon-btn" onclick="openInfoModal()" title="Informazioni e aggiornamenti" aria-label="Informazioni e aggiornamenti">
           ℹ️
@@ -2047,11 +2132,13 @@
         </div>
 
         <div class="input-row">
-          <input type="text" id="playerNameInput" class="input-field" placeholder="Nome giocatore (es. Marco)..." autocomplete="off" onkeydown="if(event.key==='Enter') addPlayerFromInput()">
+          <input type="text" id="playerNameInput" class="input-field" placeholder="Nome giocatore (es. Marco)..." autocomplete="off" oninput="renderNameSuggestions()" onkeydown="if(event.key==='Enter') addPlayerFromInput()">
           <button class="btn btn-primary" style="width: auto; padding: 0 18px;" onclick="addPlayerFromInput()">
             + Aggiungi
           </button>
         </div>
+
+        <div id="nameSuggestions" class="name-suggestions" style="display: none;"></div>
 
         <div id="playerChipsList" class="player-chips"></div>
       </div>
@@ -2184,8 +2271,8 @@
     <section id="screenDistribution" class="screen">
       <div id="distStepCover" class="pass-card">
         <span id="distProgressBadge" class="badge">Giocatore 1 di 5</span>
-        <div style="font-size: 3.4rem;">📱</div>
-        <div style="font-size: 1rem; color: var(--text-muted);">Passa il telefono a:</div>
+        <div style="font-size: 1rem; color: var(--text-muted);">📱 Passa il telefono a:</div>
+        <span id="distCoverAvatar" class="avatar avatar-lg" aria-hidden="true">?</span>
         <div id="distPlayerNameCover" class="role-big-name">Nome Giocatore</div>
         <p class="card-subtitle" style="max-width: 320px;">
           Assicurati che nessun altro stia guardando lo schermo. Il ruolo resta visibile solo finché tieni il dito premuto.
@@ -2292,6 +2379,9 @@
         </div>
         <div id="narratorPlayersList" class="narrator-players-list"></div>
       </div>
+
+      <!-- Indietro / Avanti della guida, sempre a portata di pollice -->
+      <div id="guideBottomBar" class="guide-bottom-bar"></div>
     </section>
   </div>
 
@@ -2318,8 +2408,8 @@
       <!-- Step 1: Copertura di sicurezza -->
       <div id="aaStepCover" class="pass-card">
         <span class="badge">🔒 Modalità Anti-Amnesia Protetta</span>
-        <div style="font-size: 3.5rem;">🤫</div>
-        <div style="color: var(--text-muted);">Passa il telefono a:</div>
+        <div style="color: var(--text-muted);">🤫 Passa il telefono a:</div>
+        <span id="aaCoverAvatar" class="avatar avatar-lg" aria-hidden="true">?</span>
         <div id="aaCoverPlayerName" class="role-big-name">Giocatore</div>
         <button id="btnAaReveal" class="btn btn-primary hold-btn" style="margin-top: 10px;">
           👆 Tieni premuto qui per vedere il tuo ruolo
@@ -2561,6 +2651,14 @@
       <p class="card-subtitle">
         Per aggiornare: scarica il file, aprilo e tocca <strong>Aggiorna</strong>. La nuova versione si installa sopra quella vecchia e i dati restano.
       </p>
+      <button class="btn" onclick="openWhatsNewModal('all')">📜 Novità delle ultime versioni</button>
+
+      <div class="info-share">
+        <div class="switch-title">📲 Dai Lupus ai tuoi amici</div>
+        <img class="info-qr" src="./qr-scarica.svg" alt="QR code per scaricare Lupus" width="180" height="180">
+        <div class="card-subtitle">Fagli inquadrare questo codice con la fotocamera: si apre la pagina per scaricare l'app.</div>
+        <button class="btn" onclick="shareAppLink()">📤 Condividi il link</button>
+      </div>
       <button class="btn" onclick="closeInfoModal()">Chiudi</button>
     </div>
   </div>
@@ -2695,6 +2793,27 @@
 
   <!-- Contenitore Toast -->
   <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Avviso con "Annulla" (2 secondi) dopo le azioni che si possono correggere -->
+  <div id="undoToast" class="undo-toast" role="status" aria-live="polite">
+    <span id="undoToastText"></span>
+    <button class="undo-toast-btn" onclick="onUndoToastClick()">Annulla</button>
+    <div class="undo-toast-progress"></div>
+  </div>
+
+  <!-- ==========================================
+       MODALE: NOVITÀ DELLA VERSIONE
+  =========================================== -->
+  <div id="modalWhatsNew" class="modal-overlay">
+    <div class="modal-box" style="max-width: 460px;">
+      <div class="card-header">
+        <div id="whatsNewTitle" class="card-title">🆕 Novità</div>
+        <button class="icon-btn" onclick="closeWhatsNewModal()" aria-label="Chiudi">✖</button>
+      </div>
+      <div id="whatsNewBody" style="display: flex; flex-direction: column; gap: 14px;"></div>
+      <button class="btn btn-primary" onclick="closeWhatsNewModal()">Ok, giochiamo!</button>
+    </div>
+  </div>
 
   <script src="./rules.js"></script>
   <script src="./game.js"></script>

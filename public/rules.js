@@ -807,3 +807,72 @@ function rolePhrase(role) {
   const name = role ? role.name : 'il ruolo';
   return `«Si sveglia ${name}... ${name} chiude gli occhi.»`;
 }
+
+/* =========================================================================
+   9. GIOCATORI: COLORE, INIZIALE E NOMI GIÀ USATI (FUNZIONI PURE)
+========================================================================= */
+// Colori dei giocatori: tenui, ben distinti tra loro e leggibili con il testo scuro sopra
+const PLAYER_COLORS = [
+  '#E58C6B', '#F2C86B', '#8CC08A', '#7FA8E0', '#B79CED', '#E59AB5', '#69C3C0', '#D9A679',
+  '#A8C26A', '#F09E5C', '#9DB3CC', '#C98FB0', '#7FD1A8', '#E9D27C', '#94A2F0', '#D97C7C'
+];
+
+function hashName(name) {
+  let h = 0;
+  for (const ch of String(name).trim().toLowerCase()) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return h;
+}
+
+/**
+ * Un colore per ogni giocatore: dipende dal nome (Anna ha di solito lo stesso colore),
+ * ma due giocatori della stessa partita non hanno mai lo stesso colore (fino a 16 giocatori).
+ */
+function assignPlayerColors(names) {
+  const n = PLAYER_COLORS.length;
+  const used = new Set();
+  return (names || []).map(name => {
+    let idx = hashName(name) % n;
+    for (let k = 0; k < n && used.has(idx); k++) idx = (idx + 1) % n;
+    used.add(idx);
+    return PLAYER_COLORS[idx];
+  });
+}
+
+/** Iniziale da mostrare nel cerchietto del giocatore. */
+function playerInitial(name) {
+  const text = String(name || '').trim();
+  if (!text) return '?';
+  return Array.from(text)[0].toLocaleUpperCase('it');
+}
+
+/**
+ * Ricorda i nomi di chi ha giocato: known = [{ name, count, last }].
+ * Restituisce l'elenco aggiornato, dal più recente, al massimo `limit` nomi.
+ */
+function rememberPlayerNames(known, names, now, limit = 60) {
+  const list = (Array.isArray(known) ? known : []).filter(k => k && typeof k.name === 'string' && k.name.trim()).map(k => ({ ...k }));
+  (names || []).forEach(raw => {
+    const name = String(raw || '').trim();
+    if (!name) return;
+    const found = list.find(k => k.name.toLowerCase() === name.toLowerCase());
+    if (found) {
+      found.name = name;
+      found.count = (found.count || 0) + 1;
+      found.last = now;
+    } else {
+      list.push({ name, count: 1, last: now });
+    }
+  });
+  return list.sort((a, b) => (b.last || 0) - (a.last || 0) || (b.count || 0) - (a.count || 0)).slice(0, limit);
+}
+
+/** Nomi da suggerire: non già in lista, che iniziano con il testo scritto, dal più recente. */
+function suggestPlayerNames(known, currentNames, fragment, max = 10) {
+  const taken = new Set((currentNames || []).map(n => String(n).trim().toLowerCase()));
+  const f = String(fragment || '').trim().toLowerCase();
+  return (Array.isArray(known) ? known : [])
+    .filter(k => k && typeof k.name === 'string' && !taken.has(k.name.toLowerCase()) && (!f || k.name.toLowerCase().startsWith(f)))
+    .sort((a, b) => (b.last || 0) - (a.last || 0) || (b.count || 0) - (a.count || 0))
+    .slice(0, max)
+    .map(k => k.name);
+}

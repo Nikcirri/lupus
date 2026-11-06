@@ -8,7 +8,9 @@ const STORAGE_KEYS = {
   PLAYERS: 'lupus_narratore_players_v1',
   SETTINGS: 'lupus_narratore_settings_v1',
   MATCH: 'lupus_narratore_match_v1',
-  UPDATES: 'lupus_updates_v1'
+  UPDATES: 'lupus_updates_v1',
+  KNOWN_PLAYERS: 'lupus_narratore_known_players_v1', // nomi di chi ha già giocato (suggerimenti)
+  SEEN_VERSION: 'lupus_narratore_seen_version_v1'    // ultima versione di cui si sono viste le novità
 };
 
 const DEFAULT_DAY_TIMER_SECONDS = 180;
@@ -55,7 +57,8 @@ function vibrate(kind) {
   if (app && app.vibrate) {
     app.vibrate(kind);
   } else if (navigator.vibrate) {
-    try { navigator.vibrate(kind === 'long' ? [400, 150, 400] : 30); } catch (e) {}
+    const patterns = { tap: 12, reveal: 25, death: 220, victory: [80, 60, 80, 60, 160], alert: [400, 150, 400] };
+    try { navigator.vibrate(patterns[kind] || 20); } catch (e) {}
   }
 }
 
@@ -63,14 +66,24 @@ function vibrate(kind) {
    4. INIZIALIZZAZIONE E FUNZIONI DI SISTEMA (WAKE LOCK, TASTO INDIETRO, STORAGE)
 ========================================================================= */
 window.addEventListener('DOMContentLoaded', () => {
+  const isFirstRun = !hasSavedData();
   loadAllFromStorage();
   dayTimerSeconds = getTimerDuration();
   renderSetupScreen();
   showScreen('screenSetup');
   requestScreenWakeLock();
   renderUpdateBanner();
+  checkWhatsNew(isFirstRun);
   setTimeout(autoCheckForUpdates, 1500);
 });
+
+function hasSavedData() {
+  try {
+    return [STORAGE_KEYS.ROLES, STORAGE_KEYS.PLAYERS, STORAGE_KEYS.SETTINGS, STORAGE_KEYS.MATCH].some(k => localStorage.getItem(k) !== null);
+  } catch (e) {
+    return false;
+  }
+}
 
 // Tasto Indietro di Android (chiamato da src/native.js).
 // Restituisce true se l'ha gestito l'app; false = l'app va in secondo piano.
@@ -84,6 +97,7 @@ window.handleAndroidBack = function handleAndroidBack() {
   if (isOpen('modalGuide')) { closeGuideModal(); return true; }
   if (isOpen('modalShareRoles')) { closeShareRolesModal(); return true; }
   if (isOpen('modalImportRoles')) { closeImportRolesModal(); return true; }
+  if (isOpen('modalWhatsNew')) { closeWhatsNewModal(); return true; }
   if (isOpen('modalRoleForm')) { closeRoleFormModal(); return true; }
   if (isOpen('modalInfo')) { closeInfoModal(); return true; }
   if (isOpen('modalGameMenu')) { closeGameMenuModal(); return true; }
@@ -393,6 +407,7 @@ function renderPlayerChips() {
 
   const container = document.getElementById('playerChipsList');
   container.innerHTML = '';
+  renderNameSuggestions();
 
   if (count === 0) {
     container.innerHTML = `<div style="text-align:center; padding: 12px; color: var(--text-muted); font-size: 0.9rem;">
@@ -401,12 +416,13 @@ function renderPlayerChips() {
     return;
   }
 
+  const colors = assignPlayerColors(setupPlayers);
   setupPlayers.forEach((name, idx) => {
     const row = document.createElement('div');
     row.className = 'player-chip';
     row.innerHTML = `
       <div class="player-chip-name">
-        <span class="player-chip-num">${idx + 1}</span>
+        ${avatarHtml(name, colors[idx])}
         <span>${escapeHtml(name)}</span>
       </div>
       <button class="player-chip-remove" onclick="removePlayerAt(${idx})" title="Rimuovi">✖</button>
@@ -438,25 +454,79 @@ function addPlayerFromInput() {
 }
 
 function removePlayerAt(index) {
-  setupPlayers.splice(index, 1);
+  const name = setupPlayers[index];
+  doWithUndo(`✖ ${name} tolto dalla lista`, () => {
+    setupPlayers.splice(index, 1);
+    savePlayersToStorage();
+    autoSelectFirstPresetIfMatch();
+    renderSetupScreen();
+  });
+}
+
+// Nomi già usati in altre partite, proposti sotto il campo di testo
+function loadKnownPlayers() {
+  try {
+    const list = JSON.parse(localStorage.getItem(STORAGE_KEYS.KNOWN_PLAYERS) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveKnownPlayers(list) {
+  try { localStorage.setItem(STORAGE_KEYS.KNOWN_PLAYERS, JSON.stringify(list || [])); } catch (e) {}
+}
+
+function getTypedNameFragment() {
+  const value = document.getElementById('playerNameInput').value;
+  const parts = value.split(',');
+  return parts[parts.length - 1];
+}
+
+function renderNameSuggestions() {
+  const box = document.getElementById('nameSuggestions');
+  const names = suggestPlayerNames(loadKnownPlayers(), setupPlayers, getTypedNameFragment(), 10);
+  if (!names.length) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const colors = assignPlayerColors(names);
+  box.style.display = 'flex';
+  box.innerHTML = `<span class="name-suggestions-label">Hanno già giocato:</span>` +
+    names.map((n, i) => `<button class="name-suggestion" onclick="addSuggestedPlayer(${escapeHtml(JSON.stringify(n))})">${avatarHtml(n, colors[i], 'sm')} ${escapeHtml(n)}</button>`).join('') +
+    `<button class="name-suggestion name-suggestion-forget" onclick="forgetKnownPlayers()" title="Dimentica questi nomi">🧹</button>`;
+}
+
+function addSuggestedPlayer(name) {
+  if (setupPlayers.some(p => p.toLowerCase() === name.toLowerCase())) return;
+  vibrate('tap');
+  const input = document.getElementById('playerNameInput');
+  const parts = input.value.split(',');
+  parts.pop();
+  input.value = parts.length ? parts.join(',') + ', ' : '';
+  setupPlayers.push(name);
   savePlayersToStorage();
   autoSelectFirstPresetIfMatch();
   renderSetupScreen();
 }
 
+function forgetKnownPlayers() {
+  doWithUndo('🧹 Nomi suggeriti dimenticati', () => {
+    saveKnownPlayers([]);
+    renderNameSuggestions();
+  });
+}
+
 function confirmClearPlayers() {
-  openConfirmModal(
-    'Svuota Lista Giocatori',
-    'Vuoi rimuovere tutti i giocatori dalla lista?',
-    () => {
-      setupPlayers = [];
-      appSettings.selectedDeck = {};
-      appSettings.selectedPresetCode = null;
-      savePlayersToStorage();
-      saveSettingsToStorage();
-      renderSetupScreen();
-    }
-  );
+  doWithUndo('🧹 Lista giocatori svuotata', () => {
+    setupPlayers = [];
+    appSettings.selectedDeck = {};
+    appSettings.selectedPresetCode = null;
+    savePlayersToStorage();
+    saveSettingsToStorage();
+    renderSetupScreen();
+  });
 }
 
 // Interruttori delle opzioni di partita: uguali nel setup e nel menu ⚙️ durante la partita
@@ -899,32 +969,22 @@ function firstSymbol(text) {
 
 function confirmDeleteRole(roleId) {
   const r = getRoleById(roleId);
-  openConfirmModal(
-    'Elimina Ruolo',
-    `Vuoi eliminare il ruolo "${r.name}"? Potrai sempre ripristinare i 13 ruoli predefiniti in qualsiasi momento.`,
-    () => {
-      rolesDB = rolesDB.filter(item => item.id !== roleId);
-      saveRolesToStorage();
-      pruneDeckOfMissingRoles();
-      saveSettingsToStorage();
-      renderEditorRolesList();
-      showToast(`Ruolo "${r.name}" eliminato.`);
-    }
-  );
+  doWithUndo(`🗑️ Ruolo "${r.name}" eliminato`, () => {
+    rolesDB = rolesDB.filter(item => item.id !== roleId);
+    saveRolesToStorage();
+    pruneDeckOfMissingRoles();
+    saveSettingsToStorage();
+    renderEditorRolesList();
+  });
 }
 
 function confirmResetDefaultRoles() {
-  openConfirmModal(
-    '🔄 Ripristina i 13 Ruoli Predefiniti',
-    'Sei sicuro di voler ripristinare i 13 ruoli originali? Eventuali modifiche o ruoli personalizzati verranno sostituiti.',
-    () => {
-      rolesDB = JSON.parse(JSON.stringify(DEFAULT_ROLES));
-      saveRolesToStorage();
-      pruneDeckOfMissingRoles();
-      renderEditorRolesList();
-      showToast('I 13 ruoli predefiniti sono stati ripristinati!');
-    }
-  );
+  doWithUndo('🔄 Ripristinati i 13 ruoli predefiniti', () => {
+    rolesDB = JSON.parse(JSON.stringify(DEFAULT_ROLES));
+    saveRolesToStorage();
+    pruneDeckOfMissingRoles();
+    renderEditorRolesList();
+  });
 }
 
 /* =========================================================================
@@ -958,6 +1018,7 @@ function startDistributionPhase() {
   }
   stopDayTimer();
   dayTimerSeconds = getTimerDuration();
+  saveKnownPlayers(rememberPlayerNames(loadKnownPlayers(), setupPlayers, Date.now()));
 
   activeMatch = {
     status: 'distributing',
@@ -968,7 +1029,6 @@ function startDistributionPhase() {
     autoResolve: appSettings.autoResolve !== false,
     enforceRules: appSettings.enforceRules !== false,
     initialDeckMap: { ...appSettings.selectedDeck },
-    lastBurnedPlayerId: null,
     victoryDismissed: false,
     guideKey: 'intro',      // passo attuale della modalità guidata
     nightChoices: {},       // scelte di stanotte { chiavePasso: idGiocatore }
@@ -1015,6 +1075,7 @@ function renderDistributionStep() {
 
   document.getElementById('distProgressBadge').textContent = `Giocatore ${idx + 1} di ${total}`;
   document.getElementById('distPlayerNameCover').textContent = player.name;
+  setAvatar('distCoverAvatar', player);
   document.getElementById('btnRevealRole').textContent = `👆 ${player.name}, tieni premuto qui per vedere il tuo ruolo`;
   updateDistNextButton();
 }
@@ -1048,15 +1109,11 @@ function resumeSavedMatch() {
 }
 
 function confirmClearSavedMatch() {
-  openConfirmModal(
-    'Scarta Partita Salvata',
-    'Vuoi cancellare la partita in corso e configurarne una nuova?',
-    () => {
-      activeMatch = null;
-      saveMatchToStorage();
-      renderSetupScreen();
-    }
-  );
+  doWithUndo('🗑️ Partita salvata cancellata', () => {
+    activeMatch = null;
+    saveMatchToStorage();
+    renderSetupScreen();
+  });
 }
 
 /* =========================================================================
@@ -1119,15 +1176,20 @@ function evaluateVictoryCondition() {
   return evaluateVictory(activeMatch.players, findRoleOrNull);
 }
 
+let lastVictoryText = null;
+
 function renderVictoryBanner() {
   const banner = document.getElementById('victoryBanner');
   const winInfo = evaluateVictoryCondition();
 
   if (winInfo && !activeMatch.victoryDismissed) {
+    if (lastVictoryText !== winInfo.text) vibrate('victory');
+    lastVictoryText = winInfo.text;
     banner.style.display = 'flex';
     banner.className = 'victory-banner ' + (winInfo.type === 'wolves' ? 'wolves' : winInfo.type === 'solo' ? 'solo' : '');
     document.getElementById('victoryBannerText').textContent = winInfo.text;
   } else {
+    if (!winInfo) lastVictoryText = null;
     banner.style.display = 'none';
   }
 }
@@ -1137,13 +1199,6 @@ function dismissVictoryBanner() {
   activeMatch.victoryDismissed = true;
   saveMatchToStorage();
   document.getElementById('victoryBanner').style.display = 'none';
-}
-
-// Cambio di fase: di notte = alba (risolve la notte), di giorno = nuova notte.
-function toggleTurnPhase() {
-  if (!activeMatch) return;
-  if (activeMatch.phase === 'night') advanceToDay();
-  else advanceToNight();
 }
 
 // Copia della fase attuale, per poter tornare indietro se un cambio di fase è stato fatto per sbaglio.
@@ -1169,18 +1224,12 @@ function getPhaseLabel(match) {
 function undoPhaseChange() {
   if (!activeMatch || !activeMatch.undo) return;
   const previous = activeMatch.undo;
-  openConfirmModal(
-    '↩️ Torna alla fase precedente',
-    `Torni a ${getPhaseLabel(previous).replace(/^\S+ /, '')} com'era prima del cambio di fase (segnalini e morti di quel momento).`,
-    () => {
-      stopDayTimer();
-      activeMatch = previous;
-      saveMatchToStorage();
-      renderNarratorDashboard();
-      showToast(`↩️ Sei tornato a: ${getPhaseLabel(activeMatch)}`);
-    },
-    { yesLabel: 'Torna indietro', yesClass: 'btn-primary' }
-  );
+  doWithUndo(`↩️ Sei tornato a: ${getPhaseLabel(previous)}`, () => {
+    stopDayTimer();
+    activeMatch = previous;
+    saveMatchToStorage();
+    renderNarratorDashboard();
+  });
 }
 
 /* =========================================================================
@@ -1249,6 +1298,7 @@ function guideJump(key) {
 }
 
 function setGuideStep(key) {
+  vibrate('tap');
   activeMatch.guideKey = key;
   saveMatchToStorage();
   renderNarratorGuide();
@@ -1266,6 +1316,7 @@ function switchNarratorTab(tab) {
 function applyNarratorTab() {
   const isGuide = narratorTab === 'guide';
   document.getElementById('narratorGuidePanel').style.display = isGuide ? 'flex' : 'none';
+  document.getElementById('guideBottomBar').style.display = isGuide ? 'block' : 'none';
   document.getElementById('narratorPlayersPanel').style.display = isGuide ? 'none' : 'flex';
   document.getElementById('tabBtnGuide').classList.toggle('active', isGuide);
   document.getElementById('tabBtnPlayers').classList.toggle('active', !isGuide);
@@ -1291,8 +1342,9 @@ function renderNarratorGuide() {
   body.innerHTML = `
     <div class="guide-title">${escapeHtml(getStepTitle(step))}</div>
     ${renderGuideStepBody(step, plan)}
-    ${renderGuideNav(step, plan, idx)}
   `;
+  // Indietro / Avanti (o l'azione di alba e sera) stanno nella barra fissa in basso
+  document.getElementById('guideBottomBar').innerHTML = renderGuideNav(step, plan, idx);
 
   if (step.emptyCall) {
     startEmptyCallTimer(step.key);
@@ -1306,12 +1358,10 @@ function renderNarratorGuide() {
 function renderGuideNav(step, plan, idx) {
   const back = `<button class="btn" ${idx === 0 ? 'disabled' : ''} onclick="guideGo(-1)">← Indietro</button>`;
   if (step.kind === 'dawn') {
-    return `<button class="btn btn-warning guide-main-action" onclick="advanceToDay()">☀️ Fai sorgere il Giorno ${activeMatch.turn}</button>
-      <div class="guide-nav">${back}</div>`;
+    return `<div class="guide-nav">${back}<button class="btn btn-warning guide-next" onclick="advanceToDay()">☀️ Fai sorgere il Giorno ${activeMatch.turn}</button></div>`;
   }
   if (step.kind === 'dusk') {
-    return `<button class="btn btn-primary guide-main-action" onclick="advanceToNight()">🌙 Inizia la Notte ${activeMatch.turn + 1}</button>
-      <div class="guide-nav">${back}</div>`;
+    return `<div class="guide-nav">${back}<button class="btn btn-primary guide-next" onclick="advanceToNight()">🌙 Inizia la Notte ${activeMatch.turn + 1}</button></div>`;
   }
   const next = plan[idx + 1];
   return `<div class="guide-nav">${back}<button class="btn btn-primary guide-next" onclick="guideGo(1)">
@@ -1375,12 +1425,13 @@ function renderRoleStep(step, plan) {
     const question = step.kind === 'kill' ? `Chi colpisce ${mainRole.name}?` : action.question;
     const options = getTargetOptions(step, activeMatch.players, rolesDB, activeMatch.prevNightChoices || {}, isRulesEnforced());
     const chosen = (activeMatch.nightChoices || {})[step.key];
+    const colors = getMatchColors();
     html += `
       <div class="guide-question">${escapeHtml(question)}</div>
       <div class="target-grid">
         ${options.map(o => `
           <button class="target-btn${o.id === chosen ? ' selected' : ''}" ${o.disabled ? 'disabled' : ''} onclick="selectGuideTarget('${step.key}', '${o.id}')">
-            <span class="target-name">${escapeHtml(o.name)}</span>
+            <span class="target-name">${avatarHtml(o.name, colors[o.id], 'sm')} ${escapeHtml(o.name)}</span>
             ${o.reason ? `<span class="target-reason">${escapeHtml(o.reason)}</span>` : ''}
           </button>`).join('')}
       </div>
@@ -1445,6 +1496,7 @@ function renderMediumInfo() {
 }
 
 function selectGuideTarget(stepKey, playerId) {
+  vibrate('tap');
   if (!activeMatch.nightChoices) activeMatch.nightChoices = {};
   if (activeMatch.nightChoices[stepKey] === playerId) delete activeMatch.nightChoices[stepKey];
   else activeMatch.nightChoices[stepKey] = playerId;
@@ -1601,7 +1653,7 @@ function advanceToDay() {
   activeMatch.vote = null;
   dayTimerSeconds = getTimerDuration();
 
-  vibrate('short');
+  vibrate(isAutoResolve() && res.deaths.length ? 'death' : 'tap');
   saveMatchToStorage();
   narratorTab = 'guide';
   renderNarratorDashboard();
@@ -1650,7 +1702,7 @@ function updateEmptyCallCountdown() {
     emptyCallTimer.done = true;
     clearInterval(emptyCallTimer.interval);
     emptyCallTimer.interval = null;
-    vibrate('short');
+    vibrate('tap');
   }
 }
 
@@ -1706,7 +1758,7 @@ function startPauseDayTimer() {
       updateTimerUI();
       if (dayTimerSeconds === 0) {
         stopDayTimer();
-        vibrate('long');
+        vibrate('alert');
         showToast('⏰ Tempo del dibattito scaduto! Si passa ai voti.', 'warn');
       }
     }, 250);
@@ -1788,6 +1840,7 @@ function renderNarratorPlayersList() {
   const container = document.getElementById('narratorPlayersList');
   container.innerHTML = '';
   const nightTags = getNightTagsByPlayer();
+  const colors = getMatchColors();
 
   activeMatch.players.forEach(p => {
     const role = getRoleById(p.roleId);
@@ -1816,6 +1869,7 @@ function renderNarratorPlayersList() {
       <div class="np-top">
         <div class="np-identity">
           <div class="np-name-row">
+            ${avatarHtml(p.name, colors[p.id])}
             <span class="np-name">${escapeHtml(p.name)}</span>
             <span class="badge ${factionClass}">${escapeHtml(role.icon)} ${escapeHtml(role.name)}</span>
             ${wasCopied ? `<span class="badge">🎭 Ex-${escapeHtml(origRole.name)}</span>` : ''}
@@ -1890,6 +1944,7 @@ function confirmDeathCause(cause) {
 }
 
 // opts.silent = true: niente salvataggio né ridisegno (li fa chi chiama, per più morti insieme)
+// opts.quiet = true: niente avviso del rogo (lo mostra già "Annulla")
 function killPlayer(p, cause, opts = {}) {
   const role = getRoleById(p.roleId);
   p.isDead = true;
@@ -1900,8 +1955,7 @@ function killPlayer(p, cause, opts = {}) {
   // Riattiva controllo banner vittoria a ogni nuova eliminazione
   activeMatch.victoryDismissed = false;
 
-  if (cause === 'rogo') {
-    activeMatch.lastBurnedPlayerId = p.id;
+  if (cause === 'rogo' && !opts.quiet && !opts.silent) {
     showToast(`🔥 ${p.name} è stato bruciato al rogo.`);
   }
 
@@ -1913,7 +1967,7 @@ function killPlayer(p, cause, opts = {}) {
   }
 
   if (opts.silent) return;
-  vibrate('short');
+  vibrate('death');
   saveMatchToStorage();
   renderNarratorDashboard();
 }
@@ -1924,9 +1978,6 @@ function revivePlayer(p) {
   p.deathCause = null;
   p.diedOnTurn = null;
   p.diedInPhase = null;
-  if (activeMatch.lastBurnedPlayerId === p.id) {
-    activeMatch.lastBurnedPlayerId = null;
-  }
   showToast(`💚 ${p.name} è di nuovo vivo.`);
   saveMatchToStorage();
   renderNarratorDashboard();
@@ -1983,6 +2034,7 @@ function openAntiAmnesiaForPlayer(playerId) {
 
   // Schermata coperta: il ruolo si vede solo tenendo premuto il pulsante
   document.getElementById('aaCoverPlayerName').textContent = p.name;
+  setAvatar('aaCoverAvatar', p);
   document.getElementById('btnAaReveal').textContent = `👆 ${p.name}, tieni premuto qui per vedere il tuo ruolo`;
   document.getElementById('aaStepCard').classList.remove('visible');
 
@@ -2011,32 +2063,17 @@ function closeGameMenuModal() {
   document.getElementById('modalGameMenu').classList.remove('active');
 }
 
-function isMatchOver() {
-  return !!(activeMatch && evaluateVictoryCondition());
-}
-
 // Dal menu ⚙️ chiede conferma se la partita non è ancora finita (dal banner di vittoria no).
 function confirmQuickRematch() {
-  if (isMatchOver()) { quickRematch(); return; }
-  openConfirmModal(
-    '🔄 Rivincita Rapida',
-    'La partita in corso verrà chiusa: stessi giocatori e stesso mazzo, ma ruoli rimescolati.',
-    quickRematch,
-    { yesLabel: 'Rimescola', yesClass: 'btn-primary' }
-  );
+  doWithUndo('🔄 Ruoli rimescolati: passa il telefono', () => quickRematch(true));
 }
 
 function confirmReturnToSetup() {
-  if (isMatchOver()) { returnToSetupScreen(); return; }
-  openConfirmModal(
-    '🏠 Torna al Setup',
-    'La partita in corso verrà chiusa. I nomi dei giocatori e i ruoli restano per la prossima partita.',
-    returnToSetupScreen,
-    { yesLabel: 'Chiudi partita' }
-  );
+  doWithUndo('🏠 Partita chiusa', returnToSetupScreen);
 }
 
-function quickRematch() {
+// quiet = true: niente avviso (lo mostra già "Annulla")
+function quickRematch(quiet = false) {
   closeGameMenuModal();
   stopDayTimer();
 
@@ -2050,7 +2087,7 @@ function quickRematch() {
   savePlayersToStorage();
   saveSettingsToStorage();
 
-  if (startDistributionPhase()) {
+  if (startDistributionPhase() && !quiet) {
     showToast('🔄 Ruoli rimescolati! Passa il telefono per la nuova partita.');
   }
 }
@@ -2261,6 +2298,7 @@ function renderVoteVoters() {
   const container = document.getElementById('voteVotersList');
   container.innerHTML = '';
   // Niente icone dei ruoli: la finestra può essere mostrata al tavolo senza svelare nulla.
+  const colors = getMatchColors();
   getVoters(activeMatch.players).forEach(voter => {
     const weight = voteWeight(voter, findRoleOrNull(voter.roleId));
     const tags = [];
@@ -2274,6 +2312,7 @@ function renderVoteVoters() {
     row.className = 'vote-row';
     row.innerHTML = `
       <div class="vote-voter">
+        ${avatarHtml(voter.name, colors[voter.id], 'sm')}
         <strong>${escapeHtml(voter.name)}</strong>
         ${tags.join('')}
       </div>
@@ -2287,6 +2326,7 @@ function renderVoteVoters() {
 }
 
 function setVote(voterId, targetId) {
+  vibrate('tap');
   const vote = getCurrentVote();
   if (targetId) vote.votes[voterId] = targetId;
   else delete vote.votes[voterId];
@@ -2363,15 +2403,10 @@ function restartVoteFromScratch() {
 function burnFromVote(playerId) {
   const p = activeMatch.players.find(item => item.id === playerId);
   if (!p || p.isDead) return;
-  openConfirmModal(
-    '🔥 Condanna al rogo',
-    `Il villaggio manda al rogo ${p.name}. Confermi?`,
-    () => {
-      closeVoteModal();
-      killPlayer(p, 'rogo');
-    },
-    { yesLabel: '🔥 Brucia', yesClass: 'btn-warning' }
-  );
+  doWithUndo(`🔥 ${p.name} bruciato al rogo`, () => {
+    closeVoteModal();
+    killPlayer(p, 'rogo', { quiet: true });
+  });
 }
 
 /* =========================================================================
@@ -2395,6 +2430,7 @@ function openSummaryModal() {
     : `<div class="card-subtitle">Partita ancora in corso: ${escapeHtml(getPhaseLabel(activeMatch))}.</div>`;
 
   const factions = ['Branco', 'Alleato dei Lupi', 'Solitario', 'Villaggio'];
+  const colors = getMatchColors();
   const groups = factions.map(faction => {
     const members = activeMatch.players.filter(p => getRoleById(p.roleId).faction === faction);
     if (!members.length) return '';
@@ -2403,7 +2439,7 @@ function openSummaryModal() {
       const wasCopione = p.originalRoleId !== p.roleId ? ` <span class="card-subtitle">(era ${escapeHtml(getRoleById(p.originalRoleId).name)})</span>` : '';
       const status = p.isGhost ? '👻' : p.isDead ? '💀' : '🟢';
       const when = describeDeath(p);
-      return `<div class="summary-player">${status} <strong>${escapeHtml(p.name)}</strong> — ${escapeHtml(role.icon)} ${escapeHtml(role.name)}${wasCopione}${when ? ` <span class="card-subtitle">• ${escapeHtml(when)}</span>` : ''}</div>`;
+      return `<div class="summary-player">${status} ${avatarHtml(p.name, colors[p.id], 'sm')} <strong>${escapeHtml(p.name)}</strong> — ${escapeHtml(role.icon)} ${escapeHtml(role.name)}${wasCopione}${when ? ` <span class="card-subtitle">• ${escapeHtml(when)}</span>` : ''}</div>`;
     }).join('');
     return `<div class="summary-group"><span class="badge ${getFactionBadgeClass(faction)}">${escapeHtml(faction)}</span>${rows}</div>`;
   }).join('');
@@ -2469,7 +2505,7 @@ function fillRoleCard(prefix, player) {
   const role = getRoleById(player.roleId);
   const overlay = document.getElementById(prefix === 'dist' ? 'distStepReveal' : 'aaStepCard');
   overlay.querySelector('.hold-reveal-card').className = 'pass-card hold-reveal-card ' + getFactionClass(role.faction);
-  document.getElementById(prefix + 'PlayerName').textContent = player.name;
+  document.getElementById(prefix + 'PlayerName').innerHTML = `${avatarHtml(player.name, getPlayerColor(player.id), 'sm')} ${escapeHtml(player.name)}`;
   document.getElementById(prefix + 'RoleIcon').textContent = role.icon;
   document.getElementById(prefix + 'RoleName').textContent = role.name;
   const factionBadge = document.getElementById(prefix + 'RoleFaction');
@@ -2483,7 +2519,7 @@ function showDistRole() {
   if (!activeMatch || activeMatch.distIndex >= activeMatch.players.length) return;
   fillRoleCard('dist', activeMatch.players[activeMatch.distIndex]);
   document.getElementById('distStepReveal').classList.add('visible');
-  vibrate('short');
+  vibrate('reveal');
 }
 
 function hideDistRole() {
@@ -2510,7 +2546,7 @@ function showAntiAmnesiaRole() {
   if (!p) return;
   fillRoleCard('aa', p);
   document.getElementById('aaStepCard').classList.add('visible');
-  vibrate('short');
+  vibrate('reveal');
 }
 
 function hideAntiAmnesiaRole() {
@@ -2744,4 +2780,185 @@ function confirmImportRoles() {
   if (merged.added) parts.push(`${merged.added} ${merged.added === 1 ? 'aggiunto' : 'aggiunti'}`);
   if (merged.updated) parts.push(`${merged.updated} ${merged.updated === 1 ? 'aggiornato' : 'aggiornati'}`);
   showToast(`📥 Ruoli importati: ${parts.join(', ')}.`);
+}
+
+/* =========================================================================
+   22. COLORE E INIZIALE DEI GIOCATORI
+   Ogni giocatore ha un cerchietto colorato con l'iniziale, uguale in tutte le schermate.
+========================================================================= */
+function avatarHtml(name, color, size = '') {
+  return `<span class="avatar${size ? ' avatar-' + size : ''}" style="--av: ${color || '#9CA3C4'};" aria-hidden="true">${escapeHtml(playerInitial(name))}</span>`;
+}
+
+// Colori dei giocatori della partita: { idGiocatore: colore }
+function getMatchColors() {
+  const map = {};
+  if (!activeMatch) return map;
+  const colors = assignPlayerColors(activeMatch.players.map(p => p.name));
+  activeMatch.players.forEach((p, i) => { map[p.id] = colors[i]; });
+  return map;
+}
+
+function getPlayerColor(playerId) {
+  return getMatchColors()[playerId];
+}
+
+function setAvatar(elementId, player) {
+  const el = document.getElementById(elementId);
+  el.textContent = playerInitial(player.name);
+  el.style.setProperty('--av', getPlayerColor(player.id));
+}
+
+/* =========================================================================
+   23. "ANNULLA" AL POSTO DI "SEI SICURO?"
+   Le azioni che si possono correggere avvengono subito; per 2 secondi compare un avviso
+   con "Annulla" che rimette tutto com'era prima (ruoli, giocatori, impostazioni, partita).
+========================================================================= */
+const UNDO_TOAST_MS = 2000;
+let undoToastTimer = null;
+let undoRestore = null;
+
+function getActiveScreenId() {
+  const el = document.querySelector('.screen.active');
+  return el ? el.id : 'screenSetup';
+}
+
+function captureAppState() {
+  return JSON.stringify({
+    rolesDB, setupPlayers, appSettings, activeMatch,
+    knownPlayers: loadKnownPlayers(),
+    screen: getActiveScreenId(),
+    narratorTab
+  });
+}
+
+function restoreAppState(json) {
+  const st = JSON.parse(json);
+  stopDayTimer();
+  stopEmptyCallTimer();
+  ['modalVote', 'modalGameMenu', 'modalConfirm', 'modalDeathCause'].forEach(id => document.getElementById(id).classList.remove('active'));
+
+  rolesDB = st.rolesDB;
+  setupPlayers = st.setupPlayers;
+  appSettings = st.appSettings;
+  activeMatch = st.activeMatch;
+  narratorTab = st.narratorTab || 'guide';
+  saveRolesToStorage();
+  savePlayersToStorage();
+  saveSettingsToStorage();
+  saveMatchToStorage();
+  saveKnownPlayers(st.knownPlayers);
+
+  let screen = st.screen;
+  if ((screen === 'screenNarrator' || screen === 'screenDistribution') && !activeMatch) screen = 'screenSetup';
+  if (screen === 'screenNarrator') renderNarratorDashboard();
+  else if (screen === 'screenDistribution') renderDistributionStep();
+  else if (screen === 'screenRoleEditor') renderEditorRolesList();
+  else renderSetupScreen();
+  showScreen(screen);
+}
+
+function doWithUndo(message, action) {
+  const before = captureAppState();
+  action();
+  showUndoToast(message, () => restoreAppState(before));
+}
+
+function showUndoToast(message, restore) {
+  const el = document.getElementById('undoToast');
+  document.getElementById('undoToastText').textContent = message;
+  undoRestore = restore;
+  // fa ripartire la barra del tempo
+  el.classList.remove('visible');
+  void el.offsetWidth;
+  el.classList.add('visible');
+  clearTimeout(undoToastTimer);
+  undoToastTimer = setTimeout(hideUndoToast, UNDO_TOAST_MS);
+}
+
+function hideUndoToast() {
+  clearTimeout(undoToastTimer);
+  document.getElementById('undoToast').classList.remove('visible');
+  undoRestore = null;
+}
+
+function onUndoToastClick() {
+  const restore = undoRestore;
+  hideUndoToast();
+  if (!restore) return;
+  restore();
+  vibrate('tap');
+  showToast('↩️ Annullato: tutto come prima.');
+}
+
+/* =========================================================================
+   24. NOVITÀ DELLA VERSIONE E LINK PER GLI AMICI
+========================================================================= */
+function getChangelog() {
+  const app = nativeApp();
+  return app && Array.isArray(app.changelog) ? app.changelog : [];
+}
+
+// Dopo un aggiornamento mostra le novità (non alla prima installazione)
+function checkWhatsNew(isFirstRun) {
+  const current = getAppVersion();
+  if (current === '0.0.0') return;
+  let seen = null;
+  try {
+    seen = localStorage.getItem(STORAGE_KEYS.SEEN_VERSION);
+    localStorage.setItem(STORAGE_KEYS.SEEN_VERSION, current);
+  } catch (e) {}
+  if (seen === current || isFirstRun) return;
+  openWhatsNewModal(seen);
+}
+
+function formatChangelogDate(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  return Number.isFinite(d.getTime()) ? d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }) : iso;
+}
+
+// sinceVersion: mostra le versioni più nuove di questa; 'all' = tutte quelle disponibili
+function openWhatsNewModal(sinceVersion) {
+  closeInfoModal();
+  const current = getAppVersion();
+  const all = getChangelog();
+  let versions = all;
+  if (sinceVersion !== 'all') {
+    versions = all.filter(v => !isNewerVersion(v.version, current) && (!sinceVersion || isNewerVersion(v.version, sinceVersion)));
+    if (!versions.length) versions = all.filter(v => v.version === current);
+  }
+  document.getElementById('whatsNewTitle').textContent = sinceVersion === 'all' ? '📜 Novità delle versioni' : `🆕 Novità di Lupus ${current}`;
+  document.getElementById('whatsNewBody').innerHTML = versions.length
+    ? versions.map(v => `
+        <div class="whatsnew-version">
+          <div class="whatsnew-head">Versione ${escapeHtml(v.version)} <span class="card-subtitle">• ${escapeHtml(formatChangelogDate(v.date))}</span></div>
+          ${v.intro ? `<div class="whatsnew-intro">${escapeHtml(v.intro)}</div>` : ''}
+          <ul class="whatsnew-list">${v.items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
+        </div>`).join('')
+    : '<div class="card-subtitle">Nessuna novità da mostrare.</div>';
+  document.getElementById('modalWhatsNew').classList.add('active');
+  document.querySelector('#modalWhatsNew .modal-box').scrollTop = 0;
+}
+
+function closeWhatsNewModal() {
+  document.getElementById('modalWhatsNew').classList.remove('active');
+}
+
+async function shareAppLink() {
+  const text = `🐺 Scarica Lupus, l'assistente del Narratore per Lupus in Fabula (Android): ${UPDATE_PAGE_URL}`;
+  const app = nativeApp();
+  try {
+    if (app && app.isNative && app.share) {
+      await app.share(text, 'Lupus');
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ title: 'Lupus', text });
+      return;
+    }
+  } catch (e) {
+    // condivisione annullata: si prova a copiare
+  }
+  const ok = await copyText(text);
+  showToast(ok ? '📋 Link copiato: incollalo in un messaggio.' : 'Non sono riuscito a condividere il link.', ok ? 'info' : 'warn');
 }

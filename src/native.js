@@ -2,7 +2,7 @@
 // Il gioco usa window.LupusApp se c'è; nel browser queste funzioni fanno il minimo indispensabile.
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { App } from '@capacitor/app';
-import { Haptics } from '@capacitor/haptics';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { Share } from '@capacitor/share';
 import { Clipboard } from '@capacitor/clipboard';
 
@@ -10,25 +10,30 @@ const isNative = Capacitor.isNativePlatform();
 
 window.LupusApp = {
   version: __APP_VERSION__,
+  changelog: __APP_CHANGELOG__,
   isNative,
 
-  /** 'short' = vibrazione breve (morte di un giocatore), 'long' = fine del timer. */
+  /**
+   * Vibrazioni, sempre le stesse per lo stesso tipo di momento:
+   * 'tap' = scelta (leggera), 'reveal' = ruolo mostrato, 'death' = morte (forte),
+   * 'victory' = vittoria, 'alert' = fine del timer (lunga).
+   */
   async vibrate(kind) {
     if (!isNative) return;
     try {
-      if (kind === 'long') {
-        await Haptics.vibrate({ duration: 900 });
-      } else {
-        await Haptics.vibrate({ duration: 40 });
-      }
+      if (kind === 'tap') await Haptics.impact({ style: ImpactStyle.Light });
+      else if (kind === 'reveal') await Haptics.impact({ style: ImpactStyle.Medium });
+      else if (kind === 'death') await Haptics.vibrate({ duration: 220 });
+      else if (kind === 'victory') await Haptics.notification({ type: NotificationType.Success });
+      else if (kind === 'alert') await Haptics.vibrate({ duration: 900 });
     } catch {
       // La vibrazione è un extra: se il telefono non la supporta si continua senza.
     }
   },
 
   /** Apre il menu "Condividi" del telefono (WhatsApp, Telegram, email...). */
-  async share(text) {
-    await Share.share({ title: 'Ruoli per Lupus', text, dialogTitle: 'Condividi i ruoli' });
+  async share(text, title = 'Ruoli per Lupus') {
+    await Share.share({ title, text, dialogTitle: 'Condividi' });
   },
 
   /** Copia un testo negli appunti. */

@@ -8,7 +8,7 @@ const code = readFileSync(new URL('../public/rules.js', import.meta.url), 'utf8'
 const ctx = vm.createContext({ TextEncoder, TextDecoder, btoa, atob });
 vm.runInContext(
   code +
-    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase };',
+    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
   ctx
 );
 const R = ctx.R;
@@ -317,4 +317,26 @@ test('condivisione: azione notturna e regole viaggiano con il ruolo', () => {
   const base = R.DEFAULT_ROLES.map(r => ({ ...r }));
   base.find(r => r.id === 'guardia').actionRules = { notSelf: false, notSameTwice: true, notWolves: false };
   assert.equal(R.isRoleCustomized(base.find(r => r.id === 'guardia'), R.DEFAULT_ROLES), true);
+});
+
+// ---------- Giocatori: colori e nomi suggeriti ----------
+test('colori dei giocatori: stabili e mai uguali nella stessa partita', () => {
+  const names = ['Anna', 'Bruno', 'Carla', 'Dario', 'Elena', 'Fabio', 'Gino', 'Ivo', 'Luca', 'Mara', 'Nina', 'Olga', 'Pino', 'Rita', 'Sara', 'Tino'];
+  const colors = [...R.assignPlayerColors(names)];
+  assert.equal(new Set(colors).size, 16);
+  assert.deepEqual([...R.assignPlayerColors(names)], colors);
+  assert.equal(R.assignPlayerColors(['anna'])[0], R.assignPlayerColors(['Anna '])[0]);
+  assert.equal(R.playerInitial(' élena'), 'É');
+  assert.equal(R.playerInitial(''), '?');
+});
+
+test('nomi ricordati e suggeriti', () => {
+  let known = R.rememberPlayerNames([], ['Anna', 'Bruno'], 100);
+  known = R.rememberPlayerNames(known, ['anna', 'Carla'], 200);
+  const anna = known.find(k => k.name === 'anna');
+  assert.equal(anna.count, 2);
+  assert.equal(known.length, 3);
+  assert.deepEqual([...R.suggestPlayerNames(known, ['Carla'], '')], ['anna', 'Bruno']);
+  assert.deepEqual([...R.suggestPlayerNames(known, [], 'b')], ['Bruno']);
+  assert.equal(R.rememberPlayerNames([], Array.from({ length: 80 }, (_, i) => `G${i}`), 1).length, 60);
 });

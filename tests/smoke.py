@@ -61,6 +61,13 @@ def main():
         page.click("text=+ Aggiungi")
         check(page.locator(".player-chip").count() == 6, "6 giocatori aggiunti")
         check(page.locator("#btnFullscreen").count() == 0, "niente pulsante schermo intero")
+        check(page.locator(".player-chip .avatar").count() == 6, "ogni giocatore ha il suo cerchietto con l'iniziale")
+        colors = page.evaluate("[...document.querySelectorAll('.player-chip .avatar')].map(a => a.style.getPropertyValue('--av'))")
+        check(len(set(colors)) == 6, "colori tutti diversi")
+        page.locator(".player-chip").nth(1).locator(".player-chip-remove").click()
+        check(page.locator(".player-chip").count() == 5 and page.locator("#undoToast").is_visible(), "giocatore tolto con avviso Annulla")
+        page.click("#undoToast .undo-toast-btn")
+        check(page.locator(".player-chip").count() == 6 and "Bruno" in page.locator("#playerChipsList").inner_text(), "Annulla: Bruno torna in lista")
         check(not page.locator("#btnStartDistribution").is_disabled(), "preset scelto in automatico: si può distribuire")
 
         # Mazzo personalizzato senza lupi: deve spiegare il problema
@@ -108,7 +115,7 @@ def main():
         )
         guide = lambda: page.locator("#guideStep").inner_text()
         target = lambda name: page.locator(f"#guideStep .target-btn:has-text('{name}')")
-        nxt = lambda: page.click("#guideStep .guide-nav .btn-primary")
+        nxt = lambda: page.click("#guideBottomBar .guide-next")
 
         print("Notte 1 guidata")
         check("Cala la notte" in guide() and "Veggente" in guide(), "inizio della notte con i ruoli da chiamare")
@@ -127,7 +134,7 @@ def main():
         check("Vittima dei lupi: Dario" in guide(), "vittima scelta")
         nxt()
         check("Dario muore" in guide() and "sbranato" in guide(), "alba: Dario morirà")
-        page.click("#guideStep button:has-text('Fai sorgere il Giorno 1')")
+        page.click("#guideBottomBar button:has-text('Fai sorgere il Giorno 1')")
 
         print("Giorno 1 guidato")
         check("Giorno 1" in page.locator("#narratorPhaseBadge").inner_text(), "è giorno")
@@ -173,11 +180,18 @@ def main():
             selects.nth(i).select_option("p_5")
         check("Brucia Fabio (3 voti)" in page.locator("#voteActions").inner_text(), "Fabio in testa con 3 voti")
         page.click("#voteActions button:has-text('Brucia Fabio')")
-        page.click("#confirmBtnYes")
-        check(page.locator("#modalVote").is_hidden(), "votazione chiusa")
+        check(page.locator("#modalVote").is_hidden(), "votazione chiusa senza conferma")
+        check(page.locator("#undoToast").is_visible() and "Fabio" in page.locator("#undoToastText").inner_text(), "avviso con Annulla dopo il rogo")
+        page.click("#undoToast .undo-toast-btn")
+        check(page.evaluate("activeMatch.players[5].isDead") is False, "Annulla: Fabio di nuovo vivo")
+        page.click("#guideStep button:has-text('Apri la votazione')")
+        check("Brucia Fabio (3 voti)" in page.locator("#voteActions").inner_text(), "i voti erano rimasti salvati")
+        page.click("#voteActions button:has-text('Brucia Fabio')")
+        page.wait_for_timeout(2300)
+        check(page.locator("#undoToast").is_hidden(), "l'avviso sparisce dopo 2 secondi")
         check("bruciato Fabio" in guide(), "il passo del voto mostra il condannato")
         nxt()
-        page.click("#guideStep button:has-text('Inizia la Notte 2')")
+        page.click("#guideBottomBar button:has-text('Inizia la Notte 2')")
 
         print("Notte 2 guidata")
         check(page.locator(".guide-chip").count() == 6, "dalla seconda notte c'è anche il Medium")
@@ -194,17 +208,16 @@ def main():
         check("si salverà" in guide(), "i lupi scelgono chi è protetto: si salva")
         nxt()
         check("protetto" in guide() and "Manca la scelta" in guide(), "alba: salvataggio e scelta mancante del Veggente")
-        page.click("#guideStep button:has-text('Fai sorgere il Giorno 2')")
+        page.click("#guideBottomBar button:has-text('Fai sorgere il Giorno 2')")
         check("non è morto nessuno" in guide(), "annuncio: nessun morto")
 
         # ↩️ Fase: si torna indietro di più fasi
         for expected in ("Notte 2", "Giorno 1", "Notte 1"):
             page.click("#btnUndoTop")
-            page.click("#confirmBtnYes")
-            check(expected in page.locator("#narratorPhaseBadge").inner_text(), f"↩️ tornato a {expected}")
+            check(expected in page.locator("#narratorPhaseBadge").inner_text(), f"↩️ tornato a {expected} senza conferma")
         check(page.locator("#btnUndoTop").is_disabled(), "↩️ spento alla prima fase")
         check("Fine della notte" in guide(), "si riprende dall'alba della notte 1 con le scelte fatte")
-        page.click("#guideStep button:has-text('Fai sorgere il Giorno 1')")
+        page.click("#guideBottomBar button:has-text('Fai sorgere il Giorno 1')")
 
         # Anna (lupo) al rogo dalla scheda Giocatori: vince il villaggio
         page.click("#tabBtnPlayers")
@@ -257,6 +270,12 @@ def main():
         page.click("#btnSettingsTop")
         page.click("#modalGameMenu button:has-text('Torna al Setup')")
         check(page.locator("#screenSetup").is_visible(), "torna al setup")
+        page.locator(".player-chip").nth(5).locator(".player-chip-remove").click()
+        page.fill("#playerNameInput", "Fa")
+        page.evaluate("renderNameSuggestions()")
+        check(page.locator(".name-suggestion:has-text('Fabio')").is_visible(), "Fabio suggerito mentre scrivi 'Fa'")
+        page.click(".name-suggestion:has-text('Fabio')")
+        check("Fabio" in page.locator("#playerChipsList").inner_text() and page.input_value("#playerNameInput") == "", "nome suggerito aggiunto con un tocco")
 
         print("Ruoli e informazioni")
         page.click("text=Gestisci i ruoli")
@@ -310,6 +329,12 @@ def main():
         page.click("#btnInfoTop")
         check(page.locator("#modalInfo").is_visible(), "finestra informazioni")
         check("Versione" in page.locator("#infoVersion").inner_text(), "mostra la versione")
+        check(page.locator(".info-qr").evaluate("img => img.complete && img.naturalWidth > 0"), "QR code per scaricare l'app")
+        page.click("text=Novità delle ultime versioni")
+        check(page.locator("#modalWhatsNew").is_visible() and "Versione 1." in page.locator("#whatsNewBody").inner_text(), "finestra novità")
+        page.evaluate("handleAndroidBack()")
+        check(page.locator("#modalWhatsNew").is_hidden(), "indietro chiude le novità")
+        page.click("#btnInfoTop")
         page.evaluate("handleAndroidBack()")
 
         # Avviso aggiornamento simulato
@@ -319,6 +344,16 @@ def main():
         check(page.locator("#updateBanner").is_visible(), "avviso nuova versione")
         page.click("text=Più tardi")
         check(page.locator("#updateBanner").is_hidden(), "avviso nascosto con Più tardi")
+
+        print("Novità dopo l'aggiornamento")
+        page.evaluate("localStorage.setItem('lupus_narratore_seen_version_v1', '1.0.0')")
+        page.reload()
+        page.wait_for_load_state("networkidle")
+        check(page.locator("#modalWhatsNew").is_visible() and "Novità di Lupus" in page.locator("#whatsNewTitle").inner_text(), "dopo un aggiornamento compaiono le novità")
+        page.click("#modalWhatsNew button:has-text('Ok, giochiamo')")
+        page.reload()
+        page.wait_for_load_state("networkidle")
+        check(page.locator("#modalWhatsNew").is_hidden(), "le novità si vedono una volta sola")
 
         page.screenshot(path=str(DIST.parent / "tests" / "screenshot-setup.png"), full_page=False)
         browser.close()

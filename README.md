@@ -24,4 +24,5 @@ Apri il file scaricato e tocca **Aggiorna**: la nuova versione si installa sopra
 - `npm run dev` avvia la versione web, `npm test` controlla le regole, `npm run verify` fa test e build. `python3 tests/smoke.py` (dopo `npm run build`) gioca una partita completa in Chrome.
 - Quando su `main` cambia la versione in `package.json`, GitHub Actions costruisce l'APK firmato e pubblica la Release `vX.Y.Z` (`.github/workflows/release.yml`). A ogni push `.github/workflows/check.yml` fa test, build web e build Android di prova.
 - Icona: sorgente in `resources/icon.svg`, file Android in `android/app/src/main/res` (vettoriali + PNG per i telefoni più vecchi).
+- `CHANGELOG.md` finisce anche dentro l'app (finestra "Novità", letta da `scripts/changelog.mjs` durante la build). Il QR code di download in `public/qr-scarica.svg` si rigenera con `npm run qr`.
 - Regole di lavoro: [`CLAUDE.md`](CLAUDE.md). Novità di ogni versione: [`CHANGELOG.md`](CHANGELOG.md).

@@ -8,10 +8,11 @@
 - Fine di ogni modifica, sempre in quest'ordine:
   1. `npm run verify` (test + build) deve passare; se possibile anche `python3 tests/smoke.py`;
   2. `npx cap sync android`;
-  3. aggiorna `CHANGELOG.md` con una sezione `## [X.Y.Z] - AAAA-MM-GG` e la versione in `package.json`;
+  3. aggiorna `CHANGELOG.md` con una sezione `## [X.Y.Z] - AAAA-MM-GG` e la versione in `package.json` (un test controlla che coincidano). Il changelog compare nell'app nella finestra "Novità": scrivilo per chi gioca, frasi brevi e semplici;
   4. commit e push su `main`: quando cambia la versione in `package.json`, GitHub Actions costruisce l'APK firmato e pubblica la Release `vX.Y.Z` (non servono tag a mano). Controlla che i workflow "Controllo" e "Pubblica APK" finiscano con successo;
   5. dai all'utente il link https://github.com/Nikcirri/lupus/releases/latest e un elenco breve di cose da provare sul telefono.
 - L'utente è un principiante assoluto e usa solo il telefono: istruzioni passo passo, parole semplici, niente comandi da terminale per lui.
 - La chiave di firma non va mai nel repository. Vive solo nei Secrets di GitHub (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, alias `lupus`). Non cambiarla mai: con una chiave diversa gli aggiornamenti non si installano sopra la versione vecchia.
 - Non cambiare `appId` (`com.nikcirri.lupus`) né le chiavi di `localStorage` (`lupus_narratore_*_v1`), per non perdere i dati di chi ha già l'app.
+- Le azioni che si possono correggere usano `doWithUndo` (avviso con "Annulla" per 2 secondi) invece di una conferma; `openConfirmModal` resta solo per uscire dall'app.
 - Testi dell'interfaccia in italiano.

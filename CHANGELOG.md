@@ -1,5 +1,18 @@
 # Novità
 
+## [1.4.0] - 2026-11-06
+
+Più comoda da usare durante la partita.
+
+- I pulsanti Indietro e Avanti della guida (e "Fai sorgere il giorno", "Inizia la notte") sono fissi in fondo allo schermo, a portata di pollice.
+- Niente più "Sei sicuro?": quando togli un giocatore, bruci qualcuno al rogo, torni alla fase precedente o elimini un ruolo, l'azione avviene subito e per 2 secondi compare il pulsante Annulla.
+- Ogni giocatore ha un cerchietto colorato con la sua iniziale, uguale in tutte le schermate.
+- Mentre scrivi i nomi, l'app suggerisce chi ha già giocato: basta un tocco per aggiungerlo.
+- Vibrazioni diverse per ogni momento: leggera per le scelte, forte per le morti, festosa per la vittoria.
+- Nella finestra ℹ️ c'è il QR code per far scaricare Lupus agli amici e il pulsante per condividere il link.
+- Dopo ogni aggiornamento compare questa finestra con le novità (la ritrovi in ℹ️ → Novità).
+- Sui telefoni molto stretti la barra in alto mostra solo le icone; pulizia del codice e delle grafiche non più usate.
+
 ## [1.3.0] - 2026-11-06
 
 Nuova assistenza al Narratore: modalità guidata passo-passo.

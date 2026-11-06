@@ -1,5 +1,15 @@
 # Novità
 
+## [1.7.0] - 2026-11-07
+
+Si gioca anche senza Narratore, e prepararsi è più semplice.
+
+- Senza Narratore: giocano tutti. Di notte il telefono passa a ogni giocatore vivo, che fa la sua mossa in segreto. Chi non ha niente da fare tocca un nome a caso, così nessuno capisce chi ha poteri. I lupi vedono il loro branco e le scelte degli altri lupi.
+- Preparazione in tre tappe: Giocatori → Mazzo → Opzioni, con un solo pulsante in basso per andare avanti. Il tasto Indietro del telefono torna alla tappa prima.
+- Benvenuto: al primo avvio tre schermate spiegano come funziona l'app. Le ritrovi in ℹ️ → "Come funziona Lupus".
+- Backup: in ℹ️ salvi in un file i tuoi ruoli, i giocatori e le impostazioni (su Drive, WhatsApp, email...). Se cambi telefono, con "Ripristina" ritrovi tutto.
+- Vista per il tavolo: tocca 🪑 in alto per appoggiare il telefono al centro. Mostra la fase, il timer grande, chi è vivo e i voti, mai i ruoli. Per uscire tieni premuto il pulsante in basso.
+
 ## [1.6.0] - 2026-11-07
 
 Atmosfera, varianti e un Narratore su misura.

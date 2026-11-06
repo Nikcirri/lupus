@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="18 18 72 72">
+  <rect width="108" height="108" fill="#161B33"/>
+  <g transform="translate(54 57) scale(0.78) translate(-56 -54)">
+  <g fill="#E8E2C8">
+    <circle cx="29" cy="31" r="0.9"/>
+    <circle cx="40" cy="24" r="0.6"/>
+    <circle cx="24" cy="46" r="0.6"/>
+    <circle cx="84" cy="70" r="0.7"/>
+  </g>
+  <circle cx="63" cy="43" r="21" fill="#F3E3A3"/>
+  <circle cx="57" cy="34" r="3" fill="#E6D38C"/>
+  <circle cx="72" cy="50" r="4" fill="#E6D38C"/>
+  <circle cx="71" cy="34" r="2" fill="#E6D38C"/>
+  <path fill="#0B0E1C" stroke="#2E3766" stroke-width="0.9" stroke-linejoin="round" d="
+    M 81 108
+    C 80 92, 77 78, 72 68
+    C 70 64, 70 60, 71 55
+    L 74.5 40
+    L 66 48
+    L 63.5 40.5
+    L 57.5 47.5
+    C 52 45, 47 41.5, 43 38
+    L 36 31.5
+    C 33.5 29.5, 30.5 31, 31.5 34
+    L 33.5 37.5
+    L 42 44.5
+    L 36 45.5
+    C 38.5 49.5, 42 53, 46 55.5
+    C 47 59, 46 63, 44 67
+    L 47.5 67
+    L 42.5 73
+    L 46 73
+    L 40.5 81
+    L 44 81
+    C 41 89, 39 98, 38 108
+    Z"/>
+  <!-- occhio -->
+  <circle cx="55.2" cy="47.2" r="0.9" fill="#F3E3A3"/>
+
+  </g>
+</svg>

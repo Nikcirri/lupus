@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Versione monocromatica per le icone a tema. Generato da resources/icon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.78" android:scaleY="0.78" android:translateX="10.32" android:translateY="14.88">
+        <path android:pathData="M43.5,43 a19.5,19.5 0 1,0 39,0 a19.5,19.5 0 1,0 -39,0 z" android:strokeColor="#FFFFFFFF" android:strokeWidth="3" android:fillColor="#00000000"/>
+        <path android:pathData="M 81 108 C 80 92, 77 78, 72 68 C 70 64, 70 60, 71 55 L 74.5 40 L 66 48 L 63.5 40.5 L 57.5 47.5 C 52 45, 47 41.5, 43 38 L 36 31.5 C 33.5 29.5, 30.5 31, 31.5 34 L 33.5 37.5 L 42 44.5 L 36 45.5 C 38.5 49.5, 42 53, 46 55.5 C 47 59, 46 63, 44 67 L 47.5 67 L 42.5 73 L 46 73 L 40.5 81 L 44 81 C 41 89, 39 98, 38 108 Z" android:fillColor="#FFFFFFFF"/>
+    </group>
+</vector>

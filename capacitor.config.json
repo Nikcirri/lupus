@@ -1,0 +1,16 @@
+{
+  "appId": "com.nikcirri.lupus",
+  "appName": "Lupus",
+  "webDir": "dist",
+  "backgroundColor": "#121212",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover",
+      "style": "DARK"
+    }
+  }
+}

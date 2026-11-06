@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icona della schermata di avvio (Android 12+). Generato da resources/icon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M18,54 a36,36 0 1,0 72,0 a36,36 0 1,0 -72,0 z" android:fillColor="#FF161B33"/>
+    <group android:scaleX="0.78" android:scaleY="0.78" android:translateX="10.32" android:translateY="14.88">
+        <path android:pathData="M42,43 a21,21 0 1,0 42,0 a21,21 0 1,0 -42,0 z" android:fillColor="#FFF3E3A3"/>
+        <path android:pathData="M54,34 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" android:fillColor="#FFE6D38C"/>
+        <path android:pathData="M68,50 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0 z" android:fillColor="#FFE6D38C"/>
+        <path android:pathData="M69,34 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 z" android:fillColor="#FFE6D38C"/>
+        <path android:pathData="M 81 108 C 80 92, 77 78, 72 68 C 70 64, 70 60, 71 55 L 74.5 40 L 66 48 L 63.5 40.5 L 57.5 47.5 C 52 45, 47 41.5, 43 38 L 36 31.5 C 33.5 29.5, 30.5 31, 31.5 34 L 33.5 37.5 L 42 44.5 L 36 45.5 C 38.5 49.5, 42 53, 46 55.5 C 47 59, 46 63, 44 67 L 47.5 67 L 42.5 73 L 46 73 L 40.5 81 L 44 81 C 41 89, 39 98, 38 108 Z" android:fillColor="#FF0B0E1C" android:strokeColor="#FF2E3766" android:strokeWidth="0.9" android:strokeLineJoin="round"/>
+        <path android:pathData="M54.3,47.2 a0.9,0.9 0 1,0 1.8,0 a0.9,0.9 0 1,0 -1.8,0 z" android:fillColor="#FFF3E3A3"/>
+    </group>
+</vector>

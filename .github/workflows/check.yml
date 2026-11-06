@@ -1,0 +1,50 @@
+# Controlla il codice a ogni modifica: test delle regole, build web e build Android di prova (non pubblica niente).
+name: Controllo
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+
+  android:
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Build Android di prova (APK di debug, non pubblicato)
+        working-directory: android
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+          set -o pipefail
+          if ! ./gradlew --no-daemon --console=plain assembleDebug 2>&1 | tee gradle.log; then
+            MSG=$( { sed -n '/What went wrong/,/Try:/p' gradle.log; grep -E "^Caused by|^e: |error:" gradle.log | head -n 15; } | head -n 40 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=Build Android fallita::$MSG"
+            exit 1
+          fi

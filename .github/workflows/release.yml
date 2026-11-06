@@ -1,0 +1,172 @@
+# Costruisce l'APK firmato e lo pubblica nella pagina Releases.
+# Parte da solo quando su main cambia la versione in package.json (o quando si crea un tag v*).
+# Se la Release di quella versione esiste già, non fa nulla.
+name: Pubblica APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - '.github/workflows/release.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: pubblica-apk
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v5
+
+      - name: Leggi la versione e controlla se esiste già
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NAME=$(node -p "require('./package.json').version")
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] && [ "${GITHUB_REF_NAME#v}" != "$NAME" ]; then
+            echo "::error::Il tag $GITHUB_REF_NAME non corrisponde alla versione $NAME di package.json"
+            exit 1
+          fi
+          BASE="${NAME%%-*}"
+          IFS='.' read -r MAJ MIN PAT <<< "$BASE"
+          CODE=$(( ${MAJ:-0} * 10000 + ${MIN:-0} * 100 + ${PAT:-0} ))
+          if [ "$CODE" -lt 1 ]; then CODE=1; fi
+          echo "APP_VERSION_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "APP_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          # Si salta solo se la Release esiste E contiene già l'APK (una Release rimasta a metà va completata).
+          if gh release view "v$NAME" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' 2>/dev/null | grep -qx "Lupus-v$NAME.apk"; then
+            echo "La Release v$NAME con l'APK esiste già: niente da fare."
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          else
+            echo "Versione $NAME (codice $CODE) da pubblicare."
+            echo "SKIP=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Controlla che la chiave di firma sia nei Secrets
+        if: env.SKIP != 'true'
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KS" ] || [ -z "$PW" ]; then
+            # Prima configurazione: senza chiave non si pubblica niente, ma non è un errore.
+            echo "::warning::Mancano i Secrets ANDROID_KEYSTORE_BASE64 e/o ANDROID_KEYSTORE_PASSWORD (Settings > Secrets and variables > Actions). APK non pubblicato."
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepara Node
+        if: env.SKIP != 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installa le librerie
+        if: env.SKIP != 'true'
+        run: npm ci
+
+      - name: Controlli, test e build web
+        if: env.SKIP != 'true'
+        run: npm run verify
+
+      - name: Copia l'app web nel progetto Android
+        if: env.SKIP != 'true'
+        run: npx cap sync android
+
+      - name: Prepara Java
+        if: env.SKIP != 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Controlla Android SDK (già presente su ubuntu-24.04)
+        if: env.SKIP != 'true'
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME"
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+
+      - name: Ricrea la chiave di firma
+        if: env.SKIP != 'true'
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/lupus.keystore"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/lupus.keystore" >> "$GITHUB_ENV"
+
+      - name: Costruisci l'APK firmato
+        if: env.SKIP != 'true'
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          if ! ./gradlew --no-daemon --console=plain --stacktrace assembleRelease 2>&1 | tee gradle.log; then
+            # Riassunto dell'errore visibile anche senza aprire i log completi.
+            MSG=$( { sed -n '/What went wrong/,/Try:/p' gradle.log; grep -E "^Caused by|^e: |error:" gradle.log | head -n 15; } | head -n 40 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=Build Android fallita::$MSG"
+            exit 1
+          fi
+          mkdir -p ../out
+          cp app/build/outputs/apk/release/app-release.apk "../out/Lupus-v${APP_VERSION_NAME}.apk"
+
+      - name: Prepara le note della versione
+        if: env.SKIP != 'true'
+        run: |
+          awk -v ver="$APP_VERSION_NAME" '
+            $0 ~ "^## \\[?v?" ver "\\]?" { on=1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > out/notes.md
+          if [ ! -s out/notes.md ]; then echo "Versione $APP_VERSION_NAME" > out/notes.md; fi
+          {
+            echo ""
+            echo "### Come installare"
+            echo "Scarica il file **Lupus-v${APP_VERSION_NAME}.apk** qui sotto dal telefono Android e aprilo. Se Android lo chiede, consenti \"Installa app sconosciute\". Se hai già l'app, installa sopra: i dati restano."
+          } >> out/notes.md
+
+      - name: Pubblica la Release
+        id: publish
+        if: env.SKIP != 'true'
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION_NAME }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          name: Lupus v${{ env.APP_VERSION_NAME }}
+          body_path: out/notes.md
+          files: out/Lupus-v${{ env.APP_VERSION_NAME }}.apk
+
+      # Se GitHub ha avuto un problema temporaneo, si riprova con la riga di comando (fino a 3 volte).
+      - name: Riprova la pubblicazione
+        if: env.SKIP != 'true' && steps.publish.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${APP_VERSION_NAME}"
+          FILE="out/Lupus-v${APP_VERSION_NAME}.apk"
+          for attempt in 1 2 3; do
+            echo "Tentativo $attempt"
+            sleep $((attempt * 20))
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$TAG" "$FILE" --clobber --repo "$GITHUB_REPOSITORY" && exit 0
+            else
+              gh release create "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY" --title "Lupus ${TAG}" \
+                --notes-file out/notes.md --target "$GITHUB_SHA" --latest && exit 0
+            fi
+          done
+          echo "::error::Pubblicazione non riuscita dopo 3 tentativi"
+          exit 1

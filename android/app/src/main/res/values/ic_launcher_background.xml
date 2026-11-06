@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Cielo notturno dell'icona -->
+    <color name="ic_launcher_background">#161B33</color>
+    <!-- Sfondo della schermata di avvio: lo stesso nero dell'app -->
+    <color name="splash_background">#121212</color>
+</resources>

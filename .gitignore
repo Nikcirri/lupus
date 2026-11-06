@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.vite/
+__pycache__/
+tests/screenshot-*.png
+
+# La chiave di firma non deve MAI finire nel repository
+*.jks
+*.keystore
+*.p12
+keystore*.txt

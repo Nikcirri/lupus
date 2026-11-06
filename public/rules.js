@@ -288,31 +288,6 @@ function getDeckProblems(deckMap, playerCount, findRole) {
   return problems;
 }
 
-/**
- * Riepilogo della notte per l'annuncio del mattino, dai segnalini messi dal Narratore.
- * outcome: 'muore' | 'salvo' (protetto dalla Guardia) | 'immune' (Criceto) | 'giaMorto'
- * cause: 'lupi' | 'veggente'
- */
-function computeNightOutcome(players, findRole) {
-  const items = [];
-  (players || []).forEach(p => {
-    const role = findRole(p.roleId);
-    const hamster = isHamsterRole(role);
-    const probedHamster = hamster && p.seerProbed;
-    if (p.wolfTarget && !probedHamster) {
-      let outcome = 'muore';
-      if (p.isDead) outcome = 'giaMorto';
-      else if (p.shieldTonight) outcome = 'salvo';
-      else if (hamster) outcome = 'immune';
-      items.push({ playerId: p.id, name: p.name, outcome, cause: 'lupi' });
-    }
-    if (probedHamster) {
-      items.push({ playerId: p.id, name: p.name, outcome: p.isDead ? 'giaMorto' : 'muore', cause: 'veggente' });
-    }
-  });
-  return items;
-}
-
 /** Il giocatore bruciato al rogo nel giorno indicato (per il Medium), oppure null. */
 function findBurnedOnDay(players, dayTurn) {
   return (players || []).find(p => p.isDead && p.deathCause === 'rogo' && p.diedOnTurn === dayTurn) || null;
@@ -447,8 +422,18 @@ function tallyVotes(players, votes, findRole, candidateIds) {
 
 /* =========================================================================
    6. CRONOLOGIA DELLA PARTITA (FUNZIONI PURE)
-   nightLogs = [{ turn, wolfTargets, shielded, probed, flowers }] (id dei giocatori)
+   nightLogs = [{ turn, entries: [{ kind, roleIds, targetId, saved, immune }] }]
+   (le partite salvate con le versioni 1.1-1.2 usano { wolfTargets, shielded, probed, flowers }).
 ========================================================================= */
+function legacyLogEntries(log) {
+  const entries = [];
+  (log.wolfTargets || []).forEach(id => entries.push({ kind: 'wolves', roleIds: ['lupo'], targetId: id, saved: (log.shielded || []).includes(id) }));
+  (log.shielded || []).forEach(id => entries.push({ kind: 'protect', roleIds: ['guardia'], targetId: id }));
+  (log.probed || []).forEach(id => entries.push({ kind: 'investigate', roleIds: ['veggente'], targetId: id }));
+  (log.flowers || []).forEach(id => entries.push({ kind: 'mark', roleIds: ['fioraio'], targetId: id }));
+  return entries;
+}
+
 function buildTimeline(players, nightLogs, findRole) {
   const list = players || [];
   const byId = id => list.find(p => p.id === id);
@@ -456,6 +441,10 @@ function buildTimeline(players, nightLogs, findRole) {
   const roleLabel = p => {
     const r = findRole(p.roleId);
     return r ? `${r.icon} ${r.name}` : p.roleId;
+  };
+  const roleTitle = ids => {
+    const r = findRole((ids || [])[0]);
+    return r ? `${r.icon} ${r.name}` : 'Un ruolo';
   };
   const turns = new Set();
   (nightLogs || []).forEach(l => turns.add(l.turn));
@@ -465,18 +454,18 @@ function buildTimeline(players, nightLogs, findRole) {
   Array.from(turns).sort((a, b) => a - b).forEach(turn => {
     const log = (nightLogs || []).find(l => l.turn === turn);
     const nightLines = [];
-    if (log) {
-      (log.wolfTargets || []).forEach(id => {
-        const p = byId(id);
-        const saved = (log.shielded || []).includes(id);
-        const hamster = p && isHamsterRole(findRole(p.roleId));
-        nightLines.push(`🐺 I lupi hanno scelto ${nameOf(id)}${saved ? ' (salvato dalla Guardia 🛡️)' : hamster ? ' (Criceto: immune)' : ''}`);
-      });
-      (log.shielded || []).filter(id => !(log.wolfTargets || []).includes(id))
-        .forEach(id => nightLines.push(`🛡️ La Guardia ha protetto ${nameOf(id)}`));
-      (log.probed || []).forEach(id => nightLines.push(`🔮 Il Veggente ha sondato ${nameOf(id)}`));
-      (log.flowers || []).forEach(id => nightLines.push(`🌸 Fiori davanti alla porta di ${nameOf(id)}`));
-    }
+    const logEntries = log ? (Array.isArray(log.entries) ? log.entries : legacyLogEntries(log)) : [];
+    logEntries.forEach(e => {
+      const who = nameOf(e.targetId);
+      const extra = e.saved ? ' (salvato 🛡️)' : e.immune ? ' (Criceto: immune)' : '';
+      if (e.kind === 'wolves') nightLines.push(`🐺 I lupi hanno scelto ${who}${extra}`);
+      else if (e.kind === 'kill') nightLines.push(`${roleTitle(e.roleIds)} ha colpito ${who}${extra}`);
+      else if (e.kind === 'protect') nightLines.push(`${roleTitle(e.roleIds)} ha protetto ${who}`);
+      else if (e.kind === 'investigate') nightLines.push(`${roleTitle(e.roleIds)} ha indagato su ${who}`);
+      else if (e.kind === 'mark') nightLines.push(`${roleTitle(e.roleIds)}: segno per ${who}`);
+      else if (e.kind === 'copy') nightLines.push(`${roleTitle(e.roleIds)} ha copiato ${who}`);
+      else if (e.kind === 'note') nightLines.push(`${roleTitle(e.roleIds)} ha indicato ${who}`);
+    });
     const dayLines = [];
     list.filter(p => p.isDead && p.diedOnTurn === turn).forEach(p => {
       const ghost = p.isGhost ? ' → 👻 Fantasma' : '';
@@ -536,14 +525,17 @@ function sanitizeImportedRole(obj) {
     priority,
     narratorPhrase: cleanText(obj.narratorPhrase, 300),
     narratorNote: cleanText(obj.narratorNote, 300),
-    isPair: !!obj.isPair
+    isPair: !!obj.isPair,
+    nightAction: NIGHT_ACTION_KEYS.includes(obj.nightAction) ? obj.nightAction : 'none',
+    actionRules: cleanActionRules(obj.actionRules)
   };
 }
 
 function encodeRolesShare(roles) {
   const payload = (roles || []).map(r => ({
     id: r.id, name: r.name, icon: r.icon, faction: r.faction, whatYouDo: r.whatYouDo, howYouWin: r.howYouWin,
-    wakeTiming: r.wakeTiming, priority: r.priority, narratorPhrase: r.narratorPhrase || '', narratorNote: r.narratorNote || '', isPair: !!r.isPair
+    wakeTiming: r.wakeTiming, priority: r.priority, narratorPhrase: r.narratorPhrase || '', narratorNote: r.narratorNote || '', isPair: !!r.isPair,
+    nightAction: roleNightAction(r), actionRules: roleActionRules(r)
   }));
   return ROLES_SHARE_PREFIX + utf8ToBase64(JSON.stringify(payload));
 }
@@ -572,6 +564,8 @@ function decodeRolesShare(text) {
 function isRoleCustomized(role, defaults) {
   const base = (defaults || []).find(d => d.id === role.id);
   if (!base) return true;
+  if (roleNightAction(role) !== roleNightAction(base)) return true;
+  if (JSON.stringify(roleActionRules(role)) !== JSON.stringify(roleActionRules(base))) return true;
   return ['name', 'icon', 'faction', 'whatYouDo', 'howYouWin', 'wakeTiming', 'priority', 'narratorPhrase', 'narratorNote', 'isPair']
     .some(k => String(base[k] == null ? '' : base[k]) !== String(role[k] == null ? '' : role[k]));
 }
@@ -596,4 +590,220 @@ function mergeImportedRoles(existing, imported, makeId) {
     }
   });
   return { roles, added, updated };
+}
+
+/* =========================================================================
+   8. AZIONI NOTTURNE DEI RUOLI (anche per i ruoli personalizzati)
+   Ogni ruolo ha un'azione (nightAction) e delle regole (actionRules):
+   la modalità guidata usa questi dati per chiamare i ruoli e risolvere la notte.
+========================================================================= */
+const NIGHT_ACTIONS = {
+  none:        { label: 'Si sveglia e basta (nessuna scelta)', short: 'si sveglia e basta', target: false },
+  wolves:      { label: 'Si sveglia con i Lupi e sceglie la vittima', short: 'sceglie la vittima con i Lupi', target: true, question: 'Chi sbranano i lupi?' },
+  kill:        { label: 'Uccide un giocatore (muore all\'alba)', short: 'uccide un giocatore', target: true, question: 'Chi colpisce?' },
+  protect:     { label: 'Protegge un giocatore dalla morte di stanotte', short: 'protegge un giocatore', target: true, question: 'Chi protegge?' },
+  investigate: { label: 'Scopre se un giocatore è un lupo (SÌ/NO)', short: 'scopre se uno è un lupo', target: true, question: 'Chi indica?' },
+  medium:      { label: 'Scopre se il bruciato di ieri era un lupo', short: 'scopre se il bruciato di ieri era un lupo', target: false },
+  mark:        { label: 'Lascia un segno, annunciato al mattino', short: 'lascia un segno annunciato al mattino', target: true, question: 'A chi lascia il segno?' },
+  copy:        { label: 'Copia il ruolo di un giocatore', short: 'copia un ruolo', target: true, question: 'Chi copia?' },
+  note:        { label: 'Indica un giocatore (solo da annotare)', short: 'indica un giocatore', target: true, question: 'Chi indica?' }
+};
+const NIGHT_ACTION_KEYS = Object.keys(NIGHT_ACTIONS);
+
+// Azioni e regole dei 13 ruoli base (usate anche per i ruoli salvati prima della versione 1.3)
+const DEFAULT_NIGHT_ACTIONS = {
+  lupo: { nightAction: 'wolves', actionRules: { notSelf: false, notSameTwice: false, notWolves: true } },
+  veggente: { nightAction: 'investigate', actionRules: { notSelf: true, notSameTwice: false, notWolves: false } },
+  guardia: { nightAction: 'protect', actionRules: { notSelf: true, notSameTwice: true, notWolves: false } },
+  fioraio: { nightAction: 'mark', actionRules: { notSelf: true, notSameTwice: false, notWolves: false } },
+  medium: { nightAction: 'medium', actionRules: { notSelf: false, notSameTwice: false, notWolves: false } },
+  copione: { nightAction: 'copy', actionRules: { notSelf: true, notSameTwice: false, notWolves: false } }
+};
+
+function cleanActionRules(rules) {
+  const r = rules && typeof rules === 'object' ? rules : {};
+  return { notSelf: !!r.notSelf, notSameTwice: !!r.notSameTwice, notWolves: !!r.notWolves };
+}
+
+function roleNightAction(role) {
+  if (!role) return 'none';
+  if (NIGHT_ACTION_KEYS.includes(role.nightAction)) return role.nightAction;
+  return DEFAULT_NIGHT_ACTIONS[role.id] ? DEFAULT_NIGHT_ACTIONS[role.id].nightAction : 'none';
+}
+
+function roleActionRules(role) {
+  if (role && role.actionRules && typeof role.actionRules === 'object') return cleanActionRules(role.actionRules);
+  return cleanActionRules(role && DEFAULT_NIGHT_ACTIONS[role.id] ? DEFAULT_NIGHT_ACTIONS[role.id].actionRules : null);
+}
+
+// I 13 ruoli base hanno già azione e regole scritte dentro
+DEFAULT_ROLES.forEach(r => {
+  r.nightAction = roleNightAction(r);
+  r.actionRules = roleActionRules(r);
+});
+
+function wakesOnNight(wakeTiming, turn) {
+  if (wakeTiming === 'ogni_notte') return true;
+  if (wakeTiming === 'solo_notte_1') return turn === 1;
+  if (wakeTiming === 'solo_notte_2') return turn === 2;
+  if (wakeTiming === 'dalla_notte_2') return turn >= 2;
+  return false;
+}
+
+function isWolfPlayer(p, findRole) {
+  const r = findRole(p.roleId);
+  return !!r && r.faction === 'Branco';
+}
+
+/**
+ * Passi della notte per la modalità guidata, in ordine di chiamata.
+ * Ogni passo: { key, kind, roleIds, holders, aliveHolders, emptyCall }.
+ * kind: 'intro' | azione del ruolo (vedi NIGHT_ACTIONS) | 'dawn'.
+ * I ruoli che "si svegliano con i Lupi" sono riuniti in un solo passo 'wolves'.
+ */
+function buildNightPlan(players, roles, turn) {
+  const list = players || [];
+  const ordered = (roles || [])
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (Number(a.r.priority) || 10) - (Number(b.r.priority) || 10) || a.i - b.i)
+    .map(x => x.r);
+
+  const steps = [{ key: 'intro', kind: 'intro', roleIds: [], holders: [], aliveHolders: [], emptyCall: false }];
+  let wolvesStep = null;
+  ordered.forEach(role => {
+    if (!wakesOnNight(role.wakeTiming, turn)) return;
+    const holders = list.filter(p => p.roleId === role.id);
+    if (!holders.length) return;
+    const kind = roleNightAction(role);
+    if (kind === 'wolves') {
+      if (wolvesStep) {
+        wolvesStep.roleIds.push(role.id);
+        wolvesStep.holders.push(...holders);
+        return;
+      }
+      wolvesStep = { key: 'wolves', kind: 'wolves', roleIds: [role.id], holders: holders.slice() };
+      steps.push(wolvesStep);
+      return;
+    }
+    steps.push({ key: `role:${role.id}`, kind, roleIds: [role.id], holders: holders.slice() });
+  });
+  steps.forEach(step => {
+    if (step.kind === 'intro') return;
+    step.aliveHolders = step.holders.filter(p => !p.isDead);
+    step.emptyCall = step.aliveHolders.length === 0;
+  });
+  steps.push({ key: 'dawn', kind: 'dawn', roleIds: [], holders: [], aliveHolders: [], emptyCall: false });
+  return steps;
+}
+
+/**
+ * Giocatori che si possono scegliere in un passo.
+ * prevChoices = scelte della notte precedente ({ chiavePasso: idGiocatore }).
+ * rulesOn = false: nessun controllo (solo i vivi).
+ * Restituisce [{ id, name, disabled, reason }].
+ */
+function getTargetOptions(step, players, roles, prevChoices, rulesOn) {
+  const findRole = id => (roles || []).find(r => r.id === id) || null;
+  const rules = { notSelf: false, notSameTwice: false, notWolves: false };
+  step.roleIds.forEach(id => {
+    const r = roleActionRules(findRole(id));
+    rules.notSelf = rules.notSelf || r.notSelf;
+    rules.notSameTwice = rules.notSameTwice || r.notSameTwice;
+    rules.notWolves = rules.notWolves || r.notWolves;
+  });
+  const holderIds = new Set((step.holders || []).map(p => p.id));
+  const previous = (prevChoices || {})[step.key];
+  return (players || []).filter(p => !p.isDead).map(p => {
+    let reason = '';
+    if (rulesOn) {
+      if (rules.notWolves && isWolfPlayer(p, findRole)) reason = 'è un lupo';
+      else if (rules.notSelf && holderIds.has(p.id)) reason = 'sé stesso';
+      else if (rules.notSameTwice && previous === p.id) reason = 'scelto ieri notte';
+    }
+    return { id: p.id, name: p.name, disabled: !!reason, reason };
+  });
+}
+
+/** Risposta al Veggente (o a chi indaga): SÌ se è del Branco. Il Criceto risulta NO ma muore. */
+function investigateAnswer(target, findRole) {
+  const role = findRole(target.roleId);
+  return { isWolf: !!role && role.faction === 'Branco', hamster: isHamsterRole(role) };
+}
+
+/** Ruolo che prende chi copia: un lupo o chi indaga lo diventa, altrimenti diventa Contadino. */
+function copyResultRoleId(targetRole, roles) {
+  if (!targetRole) return null;
+  if (targetRole.faction === 'Branco' || roleNightAction(targetRole) === 'investigate') return targetRole.id;
+  return (roles || []).some(r => r.id === 'contadino') ? 'contadino' : null;
+}
+
+/**
+ * Risolve la notte: chi muore, chi è salvo, segni da annunciare, ruoli copiati.
+ * choices = { chiavePasso: idGiocatore } della notte.
+ */
+function resolveNight(players, steps, choices, roles) {
+  const list = players || [];
+  const findRole = id => (roles || []).find(r => r.id === id) || null;
+  const byId = id => list.find(p => p.id === id);
+  const picks = (steps || [])
+    .filter(st => !st.emptyCall && choices && choices[st.key] && byId(choices[st.key]))
+    .map(st => ({ step: st, target: byId(choices[st.key]) }));
+
+  const protectedIds = new Set(picks.filter(x => x.step.kind === 'protect').map(x => x.target.id));
+  const result = { deaths: [], saved: [], immune: [], marks: [], copies: [], entries: [] };
+  const addDeath = (target, cause, roleIds) => {
+    if (target.isDead || result.deaths.some(d => d.playerId === target.id)) return;
+    result.deaths.push({ playerId: target.id, cause, roleIds });
+  };
+
+  picks.forEach(({ step, target }) => {
+    const entry = { kind: step.kind, roleIds: step.roleIds.slice(), targetId: target.id };
+    if (step.kind === 'wolves' || step.kind === 'kill') {
+      if (protectedIds.has(target.id)) {
+        entry.saved = true;
+        result.saved.push({ playerId: target.id, from: step.kind, roleIds: step.roleIds.slice() });
+      } else if (step.kind === 'wolves' && isHamsterRole(findRole(target.roleId))) {
+        entry.immune = true;
+        result.immune.push({ playerId: target.id });
+      } else {
+        addDeath(target, step.kind === 'wolves' ? 'lupi' : 'kill', step.roleIds.slice());
+      }
+    } else if (step.kind === 'investigate') {
+      if (isHamsterRole(findRole(target.roleId))) addDeath(target, 'indagine', step.roleIds.slice());
+    } else if (step.kind === 'mark') {
+      result.marks.push({ playerId: target.id, roleId: step.roleIds[0] });
+    } else if (step.kind === 'copy') {
+      const newRoleId = copyResultRoleId(findRole(target.roleId), roles);
+      step.aliveHolders.forEach(h => result.copies.push({ playerId: h.id, targetId: target.id, newRoleId }));
+    }
+    result.entries.push(entry);
+  });
+  return result;
+}
+
+function joinNames(names) {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
+}
+
+/** Frasi del mattino da leggere ad alta voce (morti della notte e segni). */
+function buildMorningAnnouncement(deadNames, marks, findRole, nameOf) {
+  const lines = [];
+  if (!deadNames.length) lines.push('«Il villaggio si sveglia... e stanotte non è morto nessuno!»');
+  else if (deadNames.length === 1) lines.push(`«Il villaggio si sveglia... ma stanotte è morto ${deadNames[0]}.»`);
+  else lines.push(`«Il villaggio si sveglia... ma stanotte sono morti ${joinNames(deadNames)}.»`);
+  (marks || []).forEach(m => {
+    const role = findRole(m.roleId);
+    const who = nameOf(m.playerId);
+    if (role && role.id === 'fioraio') lines.push(`«Qualcuno ha lasciato dei fiori davanti alla porta di ${who}!»`);
+    else lines.push(`«${who} ha trovato un segno: ${role ? `${role.icon} ${role.name}` : 'un ruolo misterioso'} è passato di lì stanotte.»`);
+  });
+  return lines;
+}
+
+/** Frase da leggere per un ruolo: quella scritta nel ruolo, oppure una frase standard. */
+function rolePhrase(role) {
+  if (role && role.narratorPhrase && role.narratorPhrase.trim()) return role.narratorPhrase.trim();
+  const name = role ? role.name : 'il ruolo';
+  return `«Si sveglia ${name}... ${name} chiude gli occhi.»`;
 }

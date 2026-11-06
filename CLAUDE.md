@@ -3,6 +3,7 @@
 - L'app è l'assistente del Narratore per Lupus in Fabula: HTML/CSS/JS semplici (niente framework) impacchettati con Vite + Capacitor 8 Android. Niente CDN né risorse da internet: tutto incluso nell'app, che deve funzionare offline. L'unica richiesta di rete è il controllo aggiornamenti verso l'API Releases di GitHub.
 - Struttura: `index.html` (schermate e stile), `public/game.js` (interfaccia, script classico con funzioni globali usate da `onclick`), `public/rules.js` (ruoli, preset e regole pure senza DOM), `src/native.js` (modulo Capacitor che espone `window.LupusApp`).
 - Ogni regola nuova o modificata va in `public/rules.js` con un test in `tests/rules.test.js`. Ogni preset deve avere tanti ruoli quanti giocatori (lo controlla il test).
+- La modalità guidata del Narratore si basa sull'azione notturna dei ruoli (`nightAction`, `actionRules` in `rules.js`): un ruolo nuovo deve funzionare scegliendo una delle azioni esistenti, senza codice speciale per il suo id. Le scelte della notte stanno in `activeMatch.nightChoices`, l'alba le risolve con `resolveNight`.
 - Implementa tutto per intero: niente codice troncato, niente `TODO`, niente funzioni vuote o segnaposto.
 - Fine di ogni modifica, sempre in quest'ordine:
   1. `npm run verify` (test + build) deve passare; se possibile anche `python3 tests/smoke.py`;

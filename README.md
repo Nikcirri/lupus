@@ -1,6 +1,6 @@
 # Lupus
 
-L'assistente del Narratore per giocare a **Lupus in Fabula**: giocatori, mazzo dei ruoli, distribuzione segreta passando il telefono, scaletta della notte e del giorno, segnalini, timer del dibattito e vittorie automatiche. Funziona senza internet e tutti i dati restano sul telefono.
+L'assistente del Narratore per giocare a **Lupus in Fabula**: giocatori, mazzo dei ruoli, distribuzione segreta passando il telefono e una guida passo-passo per la notte e il giorno (frasi da leggere, scelte con un tocco, morti e vittorie calcolate da sola), votazione al rogo e riepilogo finale. Anche i ruoli inventati da te funzionano nella guida. Funziona senza internet e tutti i dati restano sul telefono.
 
 ## Installare l'app (Android)
 
@@ -20,7 +20,7 @@ Apri il file scaricato e tocca **Aggiorna**: la nuova versione si installa sopra
 
 ## Per chi sviluppa
 
-- `index.html`: schermate e stile. `public/game.js`: logica dell'interfaccia. `public/rules.js`: ruoli, preset e regole pure (vittorie, riepilogo della notte, controllo del mazzo, versioni). `src/native.js`: collegamento alle funzioni del telefono (tasto Indietro, vibrazione, condivisione, appunti).
+- `index.html`: schermate e stile. `public/game.js`: logica dell'interfaccia. `public/rules.js`: ruoli, preset e regole pure (azioni notturne dei ruoli, piano della notte, bersagli consentiti, risoluzione dell'alba, vittorie, voti, controllo del mazzo, versioni). `src/native.js`: collegamento alle funzioni del telefono (tasto Indietro, vibrazione, condivisione, appunti).
 - `npm run dev` avvia la versione web, `npm test` controlla le regole, `npm run verify` fa test e build. `python3 tests/smoke.py` (dopo `npm run build`) gioca una partita completa in Chrome.
 - Quando su `main` cambia la versione in `package.json`, GitHub Actions costruisce l'APK firmato e pubblica la Release `vX.Y.Z` (`.github/workflows/release.yml`). A ogni push `.github/workflows/check.yml` fa test, build web e build Android di prova.
 - Icona: sorgente in `resources/icon.svg`, file Android in `android/app/src/main/res` (vettoriali + PNG per i telefoni più vecchi).

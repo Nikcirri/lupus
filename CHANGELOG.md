@@ -1,5 +1,20 @@
 # Novità
 
+## [1.3.0] - 2026-11-06
+
+Nuova assistenza al Narratore: modalità guidata passo-passo.
+
+- La partita si gioca un passo alla volta: frase da leggere ad alta voce, tocchi il giocatore indicato, Avanti. In alto i passi della notte o del giorno, toccabili per tornare a uno qualsiasi.
+- Il Veggente: l'app ti dice subito se fare SÌ o NO. Il Medium: ti dice se il bruciato di ieri era un lupo. La Guardia, i Lupi, il Fioraio e il Copione si segnano con un tocco.
+- Alba automatica: l'app calcola chi muore (protezione della Guardia, Criceto immune ai lupi o scoperto dal Veggente), segna i morti, applica il Fantasma, scrive l'annuncio del mattino e controlla chi ha vinto. Ti avvisa se hai dimenticato una scelta.
+- Regole controllate: le scelte non permesse sono spente (la Guardia non protegge sé stessa né la stessa persona due notti di fila, il Veggente non sonda sé stesso, i lupi non scelgono un lupo).
+- Chiamate a vuoto: se un ruolo è morto, la guida te lo ricorda e fa un'attesa di qualche secondo (sempre diversa) prima di chiudere la chiamata.
+- Interruttori "Morti e vittorie automatiche" e "Regole controllate" nella schermata iniziale e nel menu ⚙️ durante la partita.
+- Giorno guidato: annuncio del mattino, dibattito con timer, votazione al rogo, fine del giorno.
+- Ruoli personalizzati: nuova voce "Cosa fa di notte" (si sveglia e basta, con i Lupi, uccide, protegge, scopre se è un lupo, come il Medium, lascia un segno, copia un ruolo, indica e basta) con le regole di scelta. La guida gestisce da sola anche i ruoli nuovi; queste impostazioni viaggiano anche quando condividi i ruoli.
+- La lista dei giocatori diventa la scheda "👥 Giocatori" per le correzioni (morti, Fantasma, note), con le scelte della notte mostrate come etichette.
+- Le partite e i ruoli salvati con le versioni precedenti vengono convertiti da soli.
+
 ## [1.2.0] - 2026-11-06
 
 Nuova veste grafica "notte al villaggio", con i colori dell'icona.

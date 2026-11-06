@@ -1566,12 +1566,6 @@
       color: #2A1708;
     }
 
-    /* Di giorno il pulsante "Vai alla notte" è color inchiostro, ben leggibile sull'alba */
-    .is-day #btnTogglePhase {
-      background-color: var(--ink);
-      border-color: var(--ink);
-      color: var(--parchment-strong);
-    }
 
     /* ---------- Scaletta del Narratore ---------- */
     .scaletta-step {
@@ -1723,6 +1717,264 @@
         animation: none !important;
       }
     }
+    /* ---------- Modalità guidata del Narratore ---------- */
+    .guide-progress-text {
+      font-weight: 500;
+      font-size: 0.95rem;
+      color: rgba(251, 246, 230, 0.85);
+    }
+
+    .is-day .guide-progress-text {
+      color: rgba(42, 23, 8, 0.85);
+    }
+
+    .narrator-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .guide-card {
+      gap: 14px;
+    }
+
+    .guide-chips {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-width: none;
+    }
+
+    .guide-chips::-webkit-scrollbar {
+      display: none;
+    }
+
+    .guide-chip {
+      flex-shrink: 0;
+      border: 1px solid var(--line);
+      background: var(--ink-deep);
+      color: var(--mist);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .guide-chip.done {
+      color: var(--sage);
+      border-color: rgba(var(--rgb-sage), 0.35);
+    }
+
+    .guide-chip.current {
+      background: var(--moon);
+      border-color: var(--moon);
+      color: #1B1733;
+      font-weight: 700;
+    }
+
+    .guide-step {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .guide-title {
+      font-family: var(--font-tale);
+      font-size: 1.7rem;
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--parchment-strong);
+    }
+
+    .guide-holders {
+      font-size: 0.98rem;
+      color: var(--mist);
+      margin-top: -6px;
+    }
+
+    .guide-holders strong {
+      color: var(--parchment-strong);
+    }
+
+    /* La frase da leggere ad alta voce: il copione del Narratore */
+    .guide-phrase {
+      font-family: var(--font-tale);
+      font-style: italic;
+      font-size: 1.18rem;
+      line-height: 1.45;
+      color: var(--parchment-strong);
+      background: rgba(var(--rgb-moon), 0.07);
+      border-left: 3px solid var(--moon);
+      border-radius: 0 12px 12px 0;
+      padding: 12px 14px;
+    }
+
+    .guide-question {
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin-bottom: -4px;
+    }
+
+    .target-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 8px;
+    }
+
+    .target-btn {
+      min-height: 52px;
+      border-radius: var(--radius-md);
+      border: 1.5px solid var(--line-strong);
+      background: var(--ink-deep);
+      color: var(--parchment-strong);
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 8px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      cursor: pointer;
+    }
+
+    .target-btn.selected {
+      background: var(--moon);
+      border-color: var(--moon);
+      color: #1B1733;
+    }
+
+    .target-btn:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+    }
+
+    .target-reason {
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--mist);
+    }
+
+    .guide-result {
+      background: var(--ink-deep);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      font-size: 1rem;
+      line-height: 1.45;
+    }
+
+    .guide-result.result-danger {
+      border-color: rgba(var(--rgb-wolf), 0.6);
+      background: rgba(var(--rgb-wolf), 0.08);
+    }
+
+    .guide-result.result-good {
+      border-color: rgba(var(--rgb-sage), 0.6);
+      background: rgba(var(--rgb-sage), 0.08);
+    }
+
+    .guide-info {
+      background: rgba(var(--rgb-sky), 0.09);
+      border: 1px solid rgba(var(--rgb-sky), 0.3);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      font-size: 0.95rem;
+    }
+
+    .guide-empty {
+      background: rgba(var(--rgb-ember), 0.09);
+      border: 1px solid rgba(var(--rgb-ember), 0.45);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      font-size: 0.98rem;
+    }
+
+    .guide-countdown {
+      margin-top: 8px;
+      font-weight: 700;
+      font-size: 1.08rem;
+      color: var(--ember);
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+
+    .guide-countdown.done {
+      color: var(--sage);
+    }
+
+    .guide-note {
+      font-size: 0.88rem;
+      color: var(--mist);
+    }
+
+    .guide-muted {
+      font-size: 0.9rem;
+      color: var(--mist);
+    }
+
+    .guide-nav {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .guide-nav > .btn:first-child {
+      white-space: nowrap;
+    }
+
+    .guide-next {
+      flex-direction: column;
+      gap: 0;
+      line-height: 1.2;
+    }
+
+    .guide-next-label {
+      font-size: 0.8rem;
+      font-weight: 500;
+      opacity: 0.8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    .guide-nav .btn:only-child {
+      grid-column: 1 / -1;
+    }
+
+    .guide-main-action {
+      min-height: 58px;
+      font-size: 1.08rem;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.95rem;
+      padding: 6px 0;
+      cursor: pointer;
+    }
+
+    .check-row input {
+      width: 22px;
+      height: 22px;
+      accent-color: var(--moon);
+      flex-shrink: 0;
+    }
+
+    .np-actions.np-actions-3 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .np-actions-3 .np-action-btn {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--parchment);
+    }
   </style>
 </head>
 <body>
@@ -1812,7 +2064,29 @@
             <div class="switch-desc">Il 1° giocatore del Villaggio che muore diventa il Fantasma (resta in silenzio di giorno, ma vota al rogo).</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="toggleGhostRule" onchange="onGhostRuleToggle(this.checked)">
+            <input type="checkbox" id="toggleGhostRule" onchange="onMatchOptionToggle('ghostRule', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="switch-row">
+          <div class="switch-info">
+            <div class="switch-title">🤖 Morti e vittorie automatiche</div>
+            <div class="switch-desc">All'alba l'app segna da sola chi muore e controlla chi ha vinto. Spento: lo fai tu.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleAutoResolve" onchange="onMatchOptionToggle('autoResolve', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="switch-row">
+          <div class="switch-info">
+            <div class="switch-title">🛡️ Regole controllate</div>
+            <div class="switch-desc">Spegne le scelte non permesse (es. la Guardia non protegge sé stessa né la stessa persona due notti di fila). Spento: puoi scegliere chiunque.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleEnforceRules" onchange="onMatchOptionToggle('enforceRules', this.checked)">
             <span class="slider"></span>
           </label>
         </div>
@@ -1974,9 +2248,7 @@
           </div>
         </div>
 
-        <button id="btnTogglePhase" class="btn btn-warning" onclick="toggleTurnPhase()">
-          ☀️ Vai al Giorno 1
-        </button>
+        <div id="guideProgressText" class="guide-progress-text">Passo 1</div>
       </div>
 
       <!-- Banner Automatico di Fine Partita -->
@@ -1998,37 +2270,26 @@
         </div>
       </div>
 
-      <!-- Box Scaletta del Narratore -->
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div id="scalettaTitle" class="card-title">📋 Scaletta Notturna</div>
-            <div id="scalettaSubtitle" class="card-subtitle">Chiama i ruoli nell'ordine indicato</div>
-          </div>
-        </div>
-        <div id="scalettaContainer" style="display: flex; flex-direction: column; gap: 10px;"></div>
+      <!-- Schede: Guida passo-passo / Giocatori (correzioni) -->
+      <div class="tabs narrator-tabs">
+        <button id="tabBtnGuide" class="tab-btn active" onclick="switchNarratorTab('guide')">🧭 Guida</button>
+        <button id="tabBtnPlayers" class="tab-btn" onclick="switchNarratorTab('players')"><span>👥 Giocatori (<span id="narratorPlayersCount">0</span>)</span></button>
       </div>
 
-      <!-- Lista Giocatori Interattiva (Controllo 100% Manuale) -->
-      <div class="card">
+      <!-- Modalità guidata: un passo alla volta -->
+      <div id="narratorGuidePanel" class="card guide-card">
+        <div id="guideChips" class="guide-chips"></div>
+        <div id="guideStep" class="guide-step"></div>
+      </div>
+
+      <!-- Giocatori: stato e correzioni -->
+      <div id="narratorPlayersPanel" class="card" style="display: none;">
         <div class="card-header">
           <div>
-            <div class="card-title">👥 Lista Giocatori & Segnalini</div>
-            <div class="card-subtitle">Controllo 100% manuale: tocca le icone come promemoria</div>
+            <div class="card-title">👥 Giocatori</div>
+            <div class="card-subtitle">Qui correggi morti, Fantasma e note. Le scelte della notte si fanno nella 🧭 Guida.</div>
           </div>
         </div>
-
-        <!-- Legenda rapida icone -->
-        <div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.76rem; color: var(--text-muted); background: var(--bg-main); padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
-          <span>🛡️ Scudo</span> •
-          <span>🐺 Bersaglio Lupi</span> •
-          <span>🌸 Fiori</span> •
-          <span>👁️ Sondato</span> •
-          <span>📌 Nota</span> •
-          <span>❌ Morto (rogo/notte)</span> •
-          <span>👻 Fantasma</span>
-        </div>
-
         <div id="narratorPlayersList" class="narrator-players-list"></div>
       </div>
     </section>
@@ -2108,7 +2369,29 @@
           <div class="switch-desc">Attiva/disattiva anche a partita in corso</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="toggleGhostRuleInGame" onchange="onGhostRuleToggle(this.checked)">
+          <input type="checkbox" id="toggleGhostRuleInGame" onchange="onMatchOptionToggle('ghostRule', this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+        <div class="switch-info">
+          <div class="switch-title">🤖 Morti e vittorie automatiche</div>
+          <div class="switch-desc">All'alba l'app segna da sola chi muore e controlla chi ha vinto. Spento: lo fai tu.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggleAutoResolveInGame" onchange="onMatchOptionToggle('autoResolve', this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+        <div class="switch-info">
+          <div class="switch-title">🛡️ Regole controllate</div>
+          <div class="switch-desc">Spegne le scelte non permesse (es. la Guardia non protegge sé stessa né la stessa persona due notti di fila). Spento: puoi scegliere chiunque.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggleEnforceRulesInGame" onchange="onMatchOptionToggle('enforceRules', this.checked)">
           <span class="slider"></span>
         </label>
       </div>
@@ -2186,8 +2469,8 @@
 
       <div class="input-row">
         <div class="form-group" style="flex: 2;">
-          <label class="form-label">Risveglio Notturno</label>
-          <select id="rfWake" class="select-field">
+          <label class="form-label">Quando si sveglia</label>
+          <select id="rfWake" class="select-field" onchange="onRoleFormWakeChange()">
             <option value="mai">Mai / Passivo</option>
             <option value="ogni_notte">Ogni notte</option>
             <option value="solo_notte_1">Solo Notte 1</option>
@@ -2196,9 +2479,23 @@
           </select>
         </div>
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Priorità (1-10)</label>
+          <label class="form-label">Ordine (1-10)</label>
           <input type="number" id="rfPriority" class="input-field" min="1" max="10" value="5">
         </div>
+      </div>
+
+      <!-- Azione notturna: dice alla modalità guidata cosa fare con questo ruolo -->
+      <div class="form-group">
+        <label class="form-label">Cosa fa di notte (per la guida del Narratore)</label>
+        <select id="rfNightAction" class="select-field" onchange="onRoleFormActionChange()"></select>
+        <div id="rfActionHint" class="card-subtitle"></div>
+      </div>
+
+      <div id="rfRulesBox" class="form-group">
+        <label class="form-label">Regole per la scelta</label>
+        <label class="check-row"><input type="checkbox" id="rfRuleNotSelf"> Non può scegliere sé stesso</label>
+        <label class="check-row"><input type="checkbox" id="rfRuleNotSameTwice"> Non può scegliere la stessa persona due notti di fila</label>
+        <label class="check-row"><input type="checkbox" id="rfRuleNotWolves"> Non può scegliere un lupo</label>
       </div>
 
       <div class="form-group">

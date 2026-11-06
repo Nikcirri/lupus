@@ -1,5 +1,17 @@
 # Novità
 
+## [1.5.0] - 2026-11-06
+
+Cinque ruoli nuovi, preset rifatti e partite più equilibrate.
+
+- Ruoli nuovi: 🧪 Strega (una pozione per salvare e una per uccidere), 🏹 Cacciatore (quando muore porta con sé un giocatore), 🤝 Massoni (si riconoscono la prima notte), 🦉 Gufo (aiuta i lupi mettendo qualcuno sotto accusa) e 🐾 Lupo Bianco (tradisce il branco e vince se resta solo).
+- La guida li gestisce da sola: mostra alla Strega la vittima dei lupi e spegne le pozioni già usate; quando muore il Cacciatore ti chiede chi porta con sé.
+- Preset nuovi: 3 per ogni numero di giocatori, da 5 a 15, tutti equilibrati e con una breve descrizione.
+- Bilancia dell'equilibrio: mentre scegli il mazzo vedi se la partita favorisce i lupi o il villaggio, con un consiglio per pareggiare.
+- Ordine di chiamata della notte: in "Gestisci i ruoli" trascini ☰ (o usi le frecce) per decidere chi chiamare prima.
+- Ruoli personalizzati più potenti: "una volta per partita", "solo un lupo", notti pari o dispari, si sveglia con i Lupi, porta con sé qualcuno quando muore, vittorie solitarie, voto doppio, frase del mattino.
+- Se avevi già l'app, i ruoli nuovi vengono aggiunti da soli (i tuoi ruoli restano come sono).
+
 ## [1.4.0] - 2026-11-06
 
 Più comoda da usare durante la partita.

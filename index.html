@@ -2060,6 +2060,241 @@
       border-radius: 12px;
       background: #FBF6E6;
     }
+
+    /* ---------- 1.5: equilibrio del mazzo ---------- */
+    .balance-meter {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 12px;
+      background: var(--ink-deep);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+    }
+
+    .balance-label {
+      font-weight: 700;
+      font-size: 0.98rem;
+      color: var(--parchment-strong);
+    }
+
+    /* Bilancia: a sinistra il branco, a destra il villaggio, al centro la parità */
+    .balance-track {
+      position: relative;
+      height: 10px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, rgba(var(--rgb-wolf), 0.85), rgba(var(--rgb-wolf), 0.25) 38%, var(--line-strong) 50%, rgba(var(--rgb-sage), 0.25) 62%, rgba(var(--rgb-sage), 0.85));
+      margin: 4px 0;
+    }
+
+    .balance-track::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -3px;
+      bottom: -3px;
+      width: 2px;
+      margin-left: -1px;
+      background: var(--mist);
+      border-radius: 2px;
+    }
+
+    .balance-marker {
+      position: absolute;
+      top: 50%;
+      width: 20px;
+      height: 20px;
+      margin: -10px 0 0 -10px;
+      border-radius: 50%;
+      background: var(--moon);
+      border: 3px solid var(--ink-deep);
+      box-shadow: 0 0 0 1px var(--moon);
+      transition: left 0.35s ease;
+      z-index: 1;
+    }
+
+    .balance-ends {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: var(--mist);
+    }
+
+    .preset-desc {
+      font-size: 0.88rem;
+      color: var(--mist);
+      line-height: 1.35;
+    }
+
+    /* ---------- 1.5: ordine di chiamata della notte ---------- */
+    .night-order-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .night-order-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 64px;
+      padding: 4px 6px 4px 0;
+      background: var(--ink-deep);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .night-order-item.dragging {
+      border-color: var(--moon);
+      background: var(--surface-raised);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+      position: relative;
+      z-index: 2;
+    }
+
+    .drag-handle {
+      align-self: stretch;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      flex-shrink: 0;
+      font-size: 1.15rem;
+      color: var(--mist);
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .night-order-item.dragging .drag-handle {
+      color: var(--moon);
+      cursor: grabbing;
+    }
+
+    .night-order-num {
+      font-family: var(--font-tale);
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--moon);
+      min-width: 1.4em;
+      text-align: center;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+
+    .night-order-text {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .night-order-name {
+      font-weight: 700;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    .night-order-when {
+      font-size: 0.78rem;
+      color: var(--mist);
+    }
+
+    .order-btns {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .order-btn {
+      width: 40px;
+      height: 28px;
+      flex-shrink: 0;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line-strong);
+      background: var(--surface-raised);
+      color: var(--parchment);
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .order-btn:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+
+    .editor-list-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--parchment-strong);
+      margin: 6px 4px 0;
+    }
+
+    /* ---------- 1.5: regole avanzate nella finestra del ruolo ---------- */
+    .form-advanced {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 4px 12px;
+      background: var(--ink-deep);
+    }
+
+    .form-advanced[open] {
+      padding-bottom: 12px;
+    }
+
+    .form-advanced > summary {
+      cursor: pointer;
+      font-weight: 700;
+      padding: 10px 0;
+      color: var(--parchment);
+    }
+
+    .form-advanced[open] > summary {
+      margin-bottom: 4px;
+    }
+
+    .form-advanced > .form-group + .form-group,
+    .form-advanced > .switch-row + .form-group {
+      margin-top: 10px;
+    }
+
+    .form-checks {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---------- 1.5: pozioni della Strega e colpo del Cacciatore ---------- */
+    .potion-box {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .potion-title {
+      font-weight: 700;
+      font-size: 1.02rem;
+      margin-top: 4px;
+    }
+
+    .potion-btn {
+      min-height: 56px;
+    }
+
+    .death-shot-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
+      border-radius: var(--radius-lg);
+      border: 1.5px solid rgba(var(--rgb-ember), 0.7);
+      background: rgba(var(--rgb-ember), 0.1);
+    }
+
+    .death-shot-card .btn {
+      align-self: flex-start;
+    }
   </style>
 </head>
 <body>
@@ -2180,7 +2415,7 @@
 
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button class="btn" style="flex: 2;" onclick="openRoleEditorScreen()">
-            <span>🛠️ Gestisci i ruoli (<span id="totalRolesDbCount">13</span>)</span>
+            <span>🛠️ Gestisci i ruoli (<span id="totalRolesDbCount">18</span>)</span>
           </button>
           <button class="btn" style="flex: 1;" onclick="openGuideModal()">
             📖 Guida
@@ -2193,6 +2428,13 @@
         <div class="card-header">
           <div class="card-title">🃏 Selezione Mazzo Ruoli</div>
           <span id="deckMatchBadge" class="badge">0 / 0</span>
+        </div>
+
+        <div id="deckBalance" class="balance-meter" style="display: none;">
+          <div id="deckBalanceLabel" class="balance-label"></div>
+          <div class="balance-track" aria-hidden="true"><span id="deckBalanceMarker" class="balance-marker"></span></div>
+          <div class="balance-ends" aria-hidden="true"><span>🐺 Lupi</span><span>Villaggio 🏡</span></div>
+          <div id="deckBalanceHint" class="card-subtitle"></div>
         </div>
 
         <div class="tabs">
@@ -2242,7 +2484,7 @@
         <div class="card-header">
           <div>
             <div class="card-title">🛠️ Gestisci i ruoli</div>
-            <div class="card-subtitle">Modifica i 13 ruoli base o creane di nuovi</div>
+            <div class="card-subtitle">Modifica i ruoli base o creane di nuovi</div>
           </div>
           <button class="btn btn-sm" onclick="closeRoleEditorScreen()">⬅️ Indietro</button>
         </div>
@@ -2252,7 +2494,7 @@
             ➕ Crea Nuovo Ruolo
           </button>
           <button class="btn btn-danger btn-sm" onclick="confirmResetDefaultRoles()">
-            🔄 Ripristina i 13 Ruoli Predefiniti
+            🔄 Ripristina i ruoli base
           </button>
         </div>
 
@@ -2262,6 +2504,15 @@
         </div>
       </div>
 
+      <div class="card">
+        <div>
+          <div class="card-title">🌙 Ordine di chiamata della notte</div>
+          <div class="card-subtitle">La guida chiama i ruoli in quest'ordine. Tieni premuto ☰ e trascina, oppure usa le frecce.</div>
+        </div>
+        <ol id="nightOrderList" class="night-order-list"></ol>
+      </div>
+
+      <div class="editor-list-title">🎭 Tutti i ruoli (<span id="editorRolesCount">0</span>)</div>
       <div id="editorRolesList" class="role-selector-list"></div>
     </section>
 
@@ -2557,21 +2808,10 @@
         <input type="text" id="rfWin" class="input-field" placeholder="Es. Vinci col villaggio.">
       </div>
 
-      <div class="input-row">
-        <div class="form-group" style="flex: 2;">
-          <label class="form-label">Quando si sveglia</label>
-          <select id="rfWake" class="select-field" onchange="onRoleFormWakeChange()">
-            <option value="mai">Mai / Passivo</option>
-            <option value="ogni_notte">Ogni notte</option>
-            <option value="solo_notte_1">Solo Notte 1</option>
-            <option value="solo_notte_2">Solo Notte 2</option>
-            <option value="dalla_notte_2">Dalla Notte 2 in poi</option>
-          </select>
-        </div>
-        <div class="form-group" style="flex: 1;">
-          <label class="form-label">Ordine (1-10)</label>
-          <input type="number" id="rfPriority" class="input-field" min="1" max="10" value="5">
-        </div>
+      <div class="form-group">
+        <label class="form-label" for="rfWake">Quando si sveglia</label>
+        <select id="rfWake" class="select-field" onchange="onRoleFormWakeChange()"></select>
+        <div class="card-subtitle">L'ordine in cui viene chiamato lo cambi in "🌙 Ordine di chiamata della notte".</div>
       </div>
 
       <!-- Azione notturna: dice alla modalità guidata cosa fare con questo ruolo -->
@@ -2583,10 +2823,44 @@
 
       <div id="rfRulesBox" class="form-group">
         <label class="form-label">Regole per la scelta</label>
-        <label class="check-row"><input type="checkbox" id="rfRuleNotSelf"> Non può scegliere sé stesso</label>
-        <label class="check-row"><input type="checkbox" id="rfRuleNotSameTwice"> Non può scegliere la stessa persona due notti di fila</label>
-        <label class="check-row"><input type="checkbox" id="rfRuleNotWolves"> Non può scegliere un lupo</label>
+        <label class="check-row"><input type="checkbox" id="rfRule_notSelf"> Non può scegliere sé stesso</label>
+        <label class="check-row"><input type="checkbox" id="rfRule_notSameTwice"> Non può scegliere la stessa persona due notti di fila</label>
+        <label class="check-row"><input type="checkbox" id="rfRule_notWolves"> Non può scegliere un lupo</label>
+        <label class="check-row"><input type="checkbox" id="rfRule_onlyWolves"> Può scegliere solo un lupo</label>
+        <label class="check-row" id="rfRuleRow_oncePerGame"><input type="checkbox" id="rfRule_oncePerGame"> Può usare il potere una sola volta per partita</label>
       </div>
+
+      <div id="rfMarkTextBox" class="form-group">
+        <label class="form-label" for="rfMarkText">Frase del mattino</label>
+        <input type="text" id="rfMarkText" class="input-field" maxlength="200" placeholder="Es. «Qualcuno ha visto un'ombra davanti alla casa di {nome}!»">
+        <div class="card-subtitle">Scrivi {nome} dove va il nome del giocatore scelto.</div>
+      </div>
+
+      <details id="rfAdvanced" class="form-advanced">
+        <summary>⚙️ Regole avanzate</summary>
+        <div class="switch-row">
+          <div class="switch-info">
+            <div class="switch-title">🐺 Si sveglia anche con i Lupi</div>
+            <div class="switch-desc">Apre gli occhi con il branco e sceglie con loro la vittima</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="rfWakesWithWolves">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="rfDeathAction">Quando muore</label>
+          <select id="rfDeathAction" class="select-field"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="rfVictory">Come vince</label>
+          <select id="rfVictory" class="select-field"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Caratteristiche</label>
+          <div id="rfTraits" class="form-checks"></div>
+        </div>
+      </details>
 
       <div class="form-group">
         <label class="form-label">Frase per il Narratore (da dire ad alta voce)</label>

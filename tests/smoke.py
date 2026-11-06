@@ -277,8 +277,89 @@ def main():
         page.click(".name-suggestion:has-text('Fabio')")
         check("Fabio" in page.locator("#playerChipsList").inner_text() and page.input_value("#playerNameInput") == "", "nome suggerito aggiunto con un tocco")
 
+        print("Equilibrio del mazzo e preset")
+        page.locator(".preset-item").first.click()
+        check(page.locator("#deckBalance").is_visible() and "equilibrata" in page.locator("#deckBalanceLabel").inner_text(), "preset: partita equilibrata")
+        check(page.locator(".preset-item").count() == 3 and page.locator(".preset-desc").count() == 3, "3 preset, ognuno con la sua descrizione")
+        page.click("#tabBtnCustom")
+        page.evaluate("changeCustomRoleQty('lupo', 1); changeCustomRoleQty('lupo', 1)")
+        check("a favore dei lupi" in page.locator("#deckBalanceLabel").inner_text(), "più lupi: la bilancia pende verso i lupi")
+        marker = page.evaluate("parseFloat(document.getElementById('deckBalanceMarker').style.left)")
+        check(marker < 30, "il segno della bilancia va verso i lupi")
+        page.click("#tabBtnPresets")
+        page.locator(".preset-item").first.click()
+
+        print("Strega e Cacciatore")
+        page.evaluate(
+            """() => {
+              appSettings.selectedDeck = { lupo: 1, strega: 1, cacciatore: 1, contadino: 3 };
+              startDistributionPhase(); beginNarratorMatch();
+              const roles = ['lupo', 'strega', 'cacciatore', 'contadino', 'contadino', 'contadino'];
+              activeMatch.players.forEach((p, i) => { p.roleId = roles[i]; p.originalRoleId = roles[i]; });
+              activeMatch.initialDeckMap = { ...appSettings.selectedDeck };
+              saveMatchToStorage(); renderNarratorDashboard();
+            }"""
+        )
+        names = page.evaluate("activeMatch.players.map(p => p.name)")
+        anna, bruno, carla, dario, elena = names[0], names[1], names[2], names[3], names[4]
+        check([c.strip() for c in page.locator(".guide-chip").all_inner_texts()][1:3] == ["🐺 Lupi", "🧪 Strega"], "la Strega viene chiamata dopo i lupi")
+        nxt()
+        target(dario).click()
+        nxt()
+        check("Pozione della vita" in guide() and f"Salva {dario}" in guide(), "la Strega vede la vittima dei lupi")
+        page.click("#guideStep .potion-btn")
+        check("Salvato con la pozione" in guide(), "pozione della vita usata")
+        target(elena).click()
+        check("Avvelenato" in guide(), "pozione della morte usata")
+        nxt()
+        check("salvato dalla pozione" in guide() and f"{elena} muore" in guide(), "l'alba tiene conto delle pozioni")
+        page.click("#guideBottomBar button:has-text('Fai sorgere il Giorno 1')")
+        alive = page.evaluate("Object.fromEntries(activeMatch.players.map(p => [p.name, !p.isDead]))")
+        check(alive[dario] and not alive[elena], "salvato dalla Strega vivo, avvelenato morto")
+        check(sorted(page.evaluate("activeMatch.usedPowers.p_1")) == ["witch-kill", "witch-save"], "pozioni segnate come usate")
+        page.evaluate("advanceToNight(); guideJump('role:strega')")
+        check("già usato entrambe le pozioni" in guide(), "notte 2: pozioni finite")
+        page.click("#btnUndoTop")
+        check("Giorno 1" in page.locator("#narratorPhaseBadge").inner_text(), "di nuovo al Giorno 1")
+
+        page.click("#tabBtnPlayers")
+        cards.nth(2).locator("button[title='Elimina / Uccidi giocatore']").click()
+        page.click("#modalDeathCause button:has-text('Bruciato al rogo')")
+        shot = page.locator("#narratorPlayersList .death-shot-card")
+        check(shot.is_visible() and "chi porta con sé" in shot.inner_text(), "il Cacciatore morto sceglie chi portare con sé")
+        page.click("#tabBtnGuide")
+        check(page.locator("#guideStep .death-shot-card").is_visible(), "lo stesso riquadro c'è anche nella guida")
+        page.locator(f"#guideStep .death-shot-card .target-btn:has-text('{anna}')").click()
+        check(page.evaluate("activeMatch.players[0].isDead && activeMatch.players[0].killedBy === 'p_2'"), "il lupo è stato portato via dal Cacciatore")
+        check(page.locator("#undoToast").is_visible(), "si può annullare il colpo")
+        check("VILLAGGIO" in page.locator("#victoryBannerText").inner_text(), "dopo il colpo vince il villaggio")
+        page.click("#tabBtnPlayers")
+        check("Portato via da" in page.locator("#narratorPlayersList").inner_text(), "la scheda dice chi l'ha portato via")
+        page.click("#tabBtnGuide")
+        page.click("#btnSettingsTop")
+        page.click("#modalGameMenu button:has-text('Torna al Setup')")
+        check(page.locator("#screenSetup").is_visible(), "torna al setup")
+
         print("Ruoli e informazioni")
         page.click("text=Gestisci i ruoli")
+        check(page.evaluate("rolesDB.length") == 18, "18 ruoli base")
+        order = lambda: page.evaluate("getNightOrderRoles(rolesDB).map(r => r.id)")
+        first = order()
+        check(page.locator("#nightOrderList .night-order-item").count() == len(first), "elenco dell'ordine di chiamata")
+        page.locator("#nightOrderList .night-order-item").first.locator(".order-btn").nth(1).click()
+        check(order()[:2] == [first[1], first[0]], "▼ sposta il ruolo più avanti nella notte")
+        check(page.locator("#undoToast").is_visible(), "cambio d'ordine annullabile")
+        wolf_handle = page.locator("#nightOrderList .night-order-item[data-id='lupo'] .drag-handle")
+        top = page.locator("#nightOrderList .night-order-item").first.bounding_box()
+        box = wolf_handle.bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.down()
+        for step in range(1, 11):
+            y = box["y"] + box["height"] / 2 + (top["y"] + 4 - box["y"] - box["height"] / 2) * step / 10
+            page.mouse.move(box["x"] + box["width"] / 2, y)
+        page.mouse.up()
+        check(order()[0] == "lupo", "trascinando ☰ il Lupo diventa il primo chiamato")
+        check(page.locator("#nightOrderList .night-order-item").first.get_attribute("data-id") == "lupo", "l'elenco si aggiorna")
         page.click("text=Crea Nuovo Ruolo")
         page.fill("#rfIcon", "🧑‍🌾")
         page.fill("#rfName", "Mugnaio")
@@ -291,19 +372,41 @@ def main():
         page.click("text=Crea Nuovo Ruolo")
         page.fill("#rfName", "Strega")
         page.fill("#rfWhat", "Di notte avvelena un giocatore.")
+        page.click("text=Salva Ruolo")
+        check("Esiste già" in page.locator("#toastContainer").inner_text(), "non si possono avere due ruoli con lo stesso nome")
+        page.fill("#rfName", "Avvelenatore")
         page.select_option("#rfWake", "mai")
         page.select_option("#rfNightAction", "kill")
         check(page.locator("#rfWake").input_value() == "ogni_notte", "con un'azione notturna si sveglia ogni notte")
         check(page.locator("#rfRulesBox").is_visible(), "regole della scelta visibili")
-        page.check("#rfRuleNotSelf")
+        page.check("#rfRule_notSelf")
+        check(page.locator("#rfRule_onlyWolves").is_visible() and page.locator("#rfRule_oncePerGame").is_visible(), "regole nuove: solo un lupo, una volta per partita")
         page.click("text=Salva Ruolo")
-        kinds = page.evaluate("""() => { const id = rolesDB.find(r => r.name === 'Strega').id;
+        kinds = page.evaluate("""() => { const id = rolesDB.find(r => r.name === 'Avvelenatore').id;
           return buildNightPlan([{ id: 'x', name: 'X', roleId: id, isDead: false }, { id: 'y', name: 'Y', roleId: 'lupo', isDead: false }], rolesDB, 1).map(s => s.kind); }""")
-        check(kinds == ["intro", "wolves", "kill", "dawn"], "la Strega ha il suo passo nella guida")
+        check(kinds == ["intro", "wolves", "kill", "dawn"], "il ruolo nuovo ha il suo passo nella guida")
+        check(order()[-1] == page.evaluate("rolesDB.find(r => r.name === 'Avvelenatore').id"), "il ruolo nuovo viene chiamato per ultimo")
         check("uccide un giocatore" in page.locator("#editorRolesList").inner_text(), "l'elenco ruoli mostra cosa fa di notte")
+
+        # Regole avanzate: un ruolo che quando muore porta con sé qualcuno e vota doppio
+        page.click("text=Crea Nuovo Ruolo")
+        check(not page.evaluate("document.getElementById('rfAdvanced').open"), "regole avanzate chiuse per un ruolo nuovo")
+        page.fill("#rfName", "Vendicatore")
+        page.fill("#rfWhat", "Se muori, porti qualcuno con te.")
+        page.select_option("#rfWake", "mai")
+        page.click("#rfAdvanced > summary")
+        page.select_option("#rfDeathAction", "kill")
+        page.check("#rfTrait_doubleVote")
+        page.click("text=Salva Ruolo")
+        avenger = page.evaluate("rolesDB.find(r => r.name === 'Vendicatore')")
+        check(avenger["deathAction"] == "kill" and avenger["traits"]["doubleVote"], "regole avanzate salvate")
+        check("porta con sé" in page.locator("#editorRolesList").inner_text(), "l'elenco ruoli mostra le capacità speciali")
+        page.locator("#editorRolesList .card:has-text('Cacciatore') button[title='Modifica']").click()
+        check(page.evaluate("document.getElementById('rfAdvanced').open") and page.locator("#rfDeathAction").input_value() == "kill", "il Cacciatore apre le regole avanzate già compilate")
+        page.evaluate("closeRoleFormModal()")
         print("Condividere i ruoli")
         page.click("text=Condividi ruoli")
-        check(page.locator("#shareRolesList input:checked").count() == 2, "preselezionati solo i ruoli creati")
+        check(page.locator("#shareRolesList input:checked").count() == 3, "preselezionati solo i ruoli creati (non quelli solo riordinati)")
         page.click("#btnShareRolesCopy")
         copied = page.evaluate("navigator.clipboard.readText()")
         check("LUPUS-RUOLI-1:" in copied and "Mugnaio" in copied, "messaggio copiato con il codice")
@@ -344,6 +447,27 @@ def main():
         check(page.locator("#updateBanner").is_visible(), "avviso nuova versione")
         page.click("text=Più tardi")
         check(page.locator("#updateBanner").is_hidden(), "avviso nascosto con Più tardi")
+
+        print("Aggiornamento dalla versione 1.4")
+        page.evaluate(
+            """() => {
+              const old = DEFAULT_ROLES.filter(r => ORIGINAL_DEFAULT_ROLE_IDS.includes(r.id)).map(r => {
+                const c = { ...r }; ['wakesWithWolves', 'deathAction', 'victory', 'traits', 'markText'].forEach(k => delete c[k]); return c; });
+              localStorage.setItem('lupus_narratore_roles_v1', JSON.stringify(old));
+              const st = JSON.parse(localStorage.getItem('lupus_narratore_settings_v1'));
+              st.selectedPresetCode = 'a'; delete st.knownDefaultRoleIds;
+              localStorage.setItem('lupus_narratore_settings_v1', JSON.stringify(st));
+            }"""
+        )
+        page.reload()
+        page.wait_for_load_state("networkidle")
+        check(page.evaluate("rolesDB.length") == 18 and page.evaluate("rolesDB.some(r => r.id === 'strega')"), "i 5 ruoli nuovi aggiunti a chi aveva la 1.4")
+        check(page.evaluate("roleTraits(findRoleOrNull('sindaco')).doubleVote && findRoleOrNull('sindaco').traits.doubleVote"), "i ruoli vecchi ricevono le capacità")
+        check(page.evaluate("appSettings.selectedPresetCode") != "a", "codice di preset vecchio dimenticato")
+        page.evaluate("rolesDB = rolesDB.filter(r => r.id !== 'gufo'); saveRolesToStorage()")
+        page.reload()
+        page.wait_for_load_state("networkidle")
+        check(page.evaluate("rolesDB.length") == 17, "un ruolo nuovo eliminato non torna più")
 
         print("Novità dopo l'aggiornamento")
         page.evaluate("localStorage.setItem('lupus_narratore_seen_version_v1', '1.0.0')")

@@ -23,7 +23,8 @@ let appSettings = {
   enforceRules: true,  // regole controllate nella modalità guidata
   selectedDeck: {}, // mappa { roleId: count }
   selectedPresetCode: null,
-  activeSetupTab: 'presets'
+  activeSetupTab: 'presets',
+  knownDefaultRoleIds: null // ruoli base già visti: i nuovi si aggiungono una volta sola
 };
 
 // Stato completo della partita attiva (salvato a ogni azione)
@@ -208,14 +209,20 @@ function loadAllFromStorage() {
   setupPlayers = setupPlayers.filter(n => typeof n === 'string' && n.trim()).map(n => n.trim());
   if (!appSettings.selectedDeck || typeof appSettings.selectedDeck !== 'object') appSettings.selectedDeck = {};
   if (activeMatch && (!Array.isArray(activeMatch.players) || activeMatch.players.length === 0)) activeMatch = null;
-  if (activeMatch) migrateMatch(activeMatch);
   migrateRoles();
+  if (activeMatch) migrateMatch(activeMatch);
   pruneDeckOfMissingRoles();
 }
 
-// Partite salvate con le versioni 1.0-1.2: i segnalini diventano le scelte della modalità guidata.
+// Partite salvate con le versioni precedenti: aggiunge i dati nuovi.
 function migrateMatch(match) {
-  if (match.nightChoices) return;
+  if (!match.nightChoices) migrateLegacyMatch(match);
+  if (!match.usedPowers || typeof match.usedPowers !== 'object') match.usedPowers = {};
+  if (!Array.isArray(match.pendingDeathActions)) match.pendingDeathActions = [];
+}
+
+// Partite salvate con le versioni 1.0-1.2: i segnalini diventano le scelte della modalità guidata.
+function migrateLegacyMatch(match) {
   const plan = buildNightPlan(match.players, rolesDB, match.turn || 1);
   const findStep = kind => plan.find(st => st.kind === kind);
   const choices = {};
@@ -247,19 +254,53 @@ function migrateMatch(match) {
   if (typeof match.enforceRules !== 'boolean') match.enforceRules = true;
 }
 
-// Ruoli salvati prima della 1.3: aggiunge "cosa fa di notte" e le regole
+// Ruoli salvati con le versioni precedenti: aggiunge i ruoli base nuovi (una volta sola)
+// e le capacità che mancano (azione notturna, regole, vittoria, caratteristiche...).
 function migrateRoles() {
   let changed = false;
+  const res = addNewDefaultRoles(rolesDB, appSettings.knownDefaultRoleIds);
+  if (res.added.length) {
+    rolesDB = res.roles;
+    changed = true;
+  }
+  if (JSON.stringify(appSettings.knownDefaultRoleIds) !== JSON.stringify(res.knownIds)) {
+    appSettings.knownDefaultRoleIds = res.knownIds;
+    saveSettingsToStorage();
+  }
   rolesDB.forEach(r => {
-    if (!NIGHT_ACTION_KEYS.includes(r.nightAction)) { r.nightAction = roleNightAction(r); changed = true; }
-    if (!r.actionRules || typeof r.actionRules !== 'object') { r.actionRules = roleActionRules(r); changed = true; }
+    const filled = completeRoleCapabilities(r);
+    const current = JSON.stringify(ROLE_CAPABILITY_FIELDS.map(k => r[k]));
+    if (current !== JSON.stringify(ROLE_CAPABILITY_FIELDS.map(k => filled[k]))) {
+      Object.assign(r, filled);
+      changed = true;
+    }
   });
   if (changed) saveRolesToStorage();
 }
 
-// Toglie dal mazzo i ruoli che non esistono più (eliminati o dopo il ripristino dei 13 base).
+const ROLE_CAPABILITY_FIELDS = ['nightAction', 'actionRules', 'wakesWithWolves', 'deathAction', 'victory', 'traits', 'markText'];
+
+function completeRoleCapabilities(r) {
+  return {
+    nightAction: roleNightAction(r),
+    actionRules: roleActionRules(r),
+    wakesWithWolves: roleWakesWithWolves(r),
+    deathAction: roleDeathAction(r),
+    victory: roleVictory(r),
+    traits: roleTraits(r),
+    markText: typeof r.markText === 'string' ? r.markText : (roleNightAction(r) === 'mark' ? roleMarkText(r) : '')
+  };
+}
+
+// Toglie dal mazzo i ruoli che non esistono più (eliminati o dopo il ripristino dei ruoli base).
 function pruneDeckOfMissingRoles() {
   let changed = false;
+  // preset delle versioni precedenti (codici cambiati con la 1.5)
+  const allCodes = Object.values(PRESETS_BY_COUNT).flat().map(p => p.code);
+  if (appSettings.selectedPresetCode && !allCodes.includes(appSettings.selectedPresetCode)) {
+    appSettings.selectedPresetCode = null;
+    changed = true;
+  }
   for (const roleId of Object.keys(appSettings.selectedDeck)) {
     if (!rolesDB.some(r => r.id === roleId) || !(appSettings.selectedDeck[roleId] > 0)) {
       delete appSettings.selectedDeck[roleId];
@@ -613,7 +654,7 @@ function renderPresetsList() {
   }
 
   const presets = PRESETS_BY_COUNT[count] || [];
-  presets.forEach(preset => {
+  presets.forEach((preset, i) => {
     const isSelected = appSettings.selectedPresetCode === preset.code && isDeckEqualToPreset(preset.roles);
     const missingRoles = getPresetMissingRoles(preset);
     const roleStrings = Object.entries(preset.roles).map(([rId, qty]) => {
@@ -626,9 +667,10 @@ function renderPresetsList() {
     item.onclick = () => selectPreset(preset.code);
     item.innerHTML = `
       <div class="preset-header">
-        <div class="preset-name">${isSelected ? '✅ ' : ''}${preset.code.toUpperCase()}. "${escapeHtml(preset.name)}"</div>
+        <div class="preset-name">${isSelected ? '✅ ' : ''}${String.fromCharCode(65 + i)}. ${escapeHtml(preset.name)}</div>
         <span class="preset-turns">⏱️ ${preset.turns}</span>
       </div>
+      ${preset.desc ? `<div class="preset-desc">${escapeHtml(preset.desc)}</div>` : ''}
       <div class="preset-roles">${roleStrings}</div>
       ${missingRoles.length ? `<div class="card-subtitle" style="color: var(--accent-warning);">⚠️ Usa ruoli che hai eliminato (${escapeHtml(missingRoles.join(', '))}). Ripristinali da "Gestisci i ruoli".</div>` : ''}
     `;
@@ -646,7 +688,7 @@ function selectPreset(presetCode) {
   const found = presets.find(p => p.code === presetCode);
   if (!found) return;
   if (getPresetMissingRoles(found).length) {
-    showToast('Questo preset usa ruoli che hai eliminato: ripristina i 13 ruoli predefiniti per usarlo.', 'warn');
+    showToast('Questo preset usa ruoli che hai eliminato: ripristina i ruoli base per usarlo.', 'warn');
     return;
   }
 
@@ -743,6 +785,8 @@ function updateSetupDeckCounters() {
   problemEl.textContent = problems[0] || '';
   problemEl.style.display = problems.length ? 'block' : 'none';
 
+  renderDeckBalance(deckTotal);
+
   if (playerCount < 5) {
     stickyStatus.style.color = 'var(--text-muted)';
     stickyStatus.textContent = `Giocatori: ${playerCount}/5`;
@@ -754,6 +798,27 @@ function updateSetupDeckCounters() {
     stickyStatus.style.color = 'var(--accent-warning)';
     badge.className = 'badge badge-alleato';
   }
+}
+
+// Equilibrio del mazzo: bilancia tra lupi (sinistra) e villaggio (destra), con un consiglio
+function renderDeckBalance(deckTotal) {
+  const box = document.getElementById('deckBalance');
+  if (!deckTotal) {
+    box.style.display = 'none';
+    return;
+  }
+  const balance = deckBalance(appSettings.selectedDeck, findRoleOrNull);
+  const hints = {
+    'wolves-strong': 'Per pareggiare aggiungi ruoli buoni con un potere (es. Veggente, Guardia) o togli qualche aiutante dei lupi.',
+    wolves: 'Per pareggiare aggiungi un ruolo buono con un potere (es. Guardia) o togli un aiutante dei lupi.',
+    balanced: 'Le due squadre partono alla pari.',
+    village: 'Per pareggiare aggiungi un aiutante dei lupi (es. Indemoniato) o togli un potere al villaggio.',
+    'village-strong': 'Per pareggiare aggiungi un lupo o un aiutante dei lupi (es. Gufo, Indemoniato) o togli qualche potere al villaggio.'
+  };
+  box.style.display = 'flex';
+  document.getElementById('deckBalanceLabel').textContent = `${balance.icon} ${balance.label}`;
+  document.getElementById('deckBalanceMarker').style.left = `${Math.round(balance.position * 100)}%`;
+  document.getElementById('deckBalanceHint').textContent = hints[balance.level];
 }
 
 // Classe con il colore della fazione (striscia dei giocatori, cornice della carta ruolo)
@@ -785,18 +850,15 @@ function closeRoleEditorScreen() {
 }
 
 function renderEditorRolesList() {
+  renderNightOrderList();
+  document.getElementById('editorRolesCount').textContent = rolesDB.length;
   const container = document.getElementById('editorRolesList');
   container.innerHTML = '';
 
   rolesDB.forEach(role => {
     const factionClass = getFactionBadgeClass(role.faction);
-    const wakeLabels = {
-      mai: 'Passivo / Mai',
-      ogni_notte: 'Ogni notte',
-      solo_notte_1: 'Solo Notte 1',
-      solo_notte_2: 'Solo Notte 2',
-      dalla_notte_2: 'Dalla Notte 2+'
-    };
+    const wake = WAKE_TIMING_LABELS[role.wakeTiming] || WAKE_TIMING_LABELS.mai;
+    const abilities = roleAbilityNotes(role);
 
     const item = document.createElement('div');
     item.className = 'card';
@@ -810,8 +872,8 @@ function renderEditorRolesList() {
           ${role.isPair ? '<span class="badge">👥 Coppia</span>' : ''}
         </div>
         <div style="display: flex; gap: 6px;">
-          <button class="icon-btn" onclick="openRoleFormModal('${role.id}')" title="Modifica">✏️</button>
-          <button class="icon-btn" style="color: var(--accent-danger);" onclick="confirmDeleteRole('${role.id}')" title="Elimina">🗑️</button>
+          <button class="icon-btn" onclick="openRoleFormModal('${role.id}')" title="Modifica" aria-label="Modifica ${escapeHtml(role.name)}">✏️</button>
+          <button class="icon-btn" style="color: var(--accent-danger);" onclick="confirmDeleteRole('${role.id}')" title="Elimina" aria-label="Elimina ${escapeHtml(role.name)}">🗑️</button>
         </div>
       </div>
       <div style="font-size: 0.85rem; color: var(--text-main);">
@@ -819,59 +881,175 @@ function renderEditorRolesList() {
         <strong>Come vinci:</strong> ${escapeHtml(role.howYouWin)}
       </div>
       <div style="font-size: 0.78rem; color: var(--text-muted); display: flex; gap: 10px; flex-wrap: wrap;">
-        <span>🌙 Risveglio: <strong>${wakeLabels[role.wakeTiming] || role.wakeTiming}</strong></span>
-        <span>🔢 Ordine: <strong>${role.priority}</strong></span>
+        <span>🌙 Risveglio: <strong>${escapeHtml(wake.short)}</strong></span>
         ${role.wakeTiming !== 'mai' ? `<span>🧭 Di notte: <strong>${escapeHtml(NIGHT_ACTIONS[roleNightAction(role)].short)}</strong></span>` : ''}
+        ${abilities.length ? `<span>✨ <strong>${escapeHtml(abilities.join(', '))}</strong></span>` : ''}
       </div>
     `;
     container.appendChild(item);
   });
 }
 
+/* ---------- Ordine di chiamata della notte (trascina ☰ oppure ▲▼) ---------- */
+let nightOrderDrag = null;
+
+function renderNightOrderList() {
+  const list = document.getElementById('nightOrderList');
+  const roles = getNightOrderRoles(rolesDB);
+  if (!roles.length) {
+    list.innerHTML = '<li class="card-subtitle">Nessun ruolo si sveglia di notte.</li>';
+    return;
+  }
+  list.innerHTML = roles.map((r, i) => `
+    <li class="night-order-item" data-id="${escapeHtml(r.id)}">
+      <span class="drag-handle" onpointerdown="startNightOrderDrag(event)" title="Tieni premuto e trascina" aria-hidden="true">☰</span>
+      <span class="night-order-num">${i + 1}</span>
+      <span class="night-order-text">
+        <span class="night-order-name">${escapeHtml(r.icon)} ${escapeHtml(r.name)}</span>
+        <span class="night-order-when">${escapeHtml((WAKE_TIMING_LABELS[r.wakeTiming] || WAKE_TIMING_LABELS.mai).short)}</span>
+      </span>
+      <span class="order-btns">
+        <button class="order-btn" onclick="moveNightOrder('${r.id}', -1)" ${i === 0 ? 'disabled' : ''} aria-label="Chiama prima ${escapeHtml(r.name)}">▲</button>
+        <button class="order-btn" onclick="moveNightOrder('${r.id}', 1)" ${i === roles.length - 1 ? 'disabled' : ''} aria-label="Chiama dopo ${escapeHtml(r.name)}">▼</button>
+      </span>
+    </li>`).join('');
+}
+
+function getNightOrderDomIds() {
+  return Array.from(document.querySelectorAll('#nightOrderList .night-order-item')).map(li => li.dataset.id);
+}
+
+function renumberNightOrderDom() {
+  document.querySelectorAll('#nightOrderList .night-order-item').forEach((li, i) => {
+    li.querySelector('.night-order-num').textContent = i + 1;
+  });
+}
+
+function startNightOrderDrag(e) {
+  const handle = e.currentTarget;
+  const item = handle.closest('.night-order-item');
+  if (!item || nightOrderDrag) return;
+  e.preventDefault();
+  try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+  item.classList.add('dragging');
+  vibrate('tap');
+  nightOrderDrag = { item, handle, startIds: getNightOrderDomIds() };
+  handle.addEventListener('pointermove', onNightOrderDragMove);
+  handle.addEventListener('pointerup', endNightOrderDrag);
+  handle.addEventListener('pointercancel', endNightOrderDrag);
+  handle.addEventListener('lostpointercapture', endNightOrderDrag);
+}
+
+function onNightOrderDragMove(e) {
+  if (!nightOrderDrag) return;
+  const { item } = nightOrderDrag;
+  const list = item.parentElement;
+  const y = e.clientY;
+  const others = Array.from(list.querySelectorAll('.night-order-item')).filter(li => li !== item);
+  const before = others.find(li => {
+    const box = li.getBoundingClientRect();
+    return y < box.top + box.height / 2;
+  }) || null;
+  // Si spostano le altre righe e non quella trascinata: toglierla dalla pagina interromperebbe il trascinamento
+  let moved = false;
+  if (before && (item.compareDocumentPosition(before) & Node.DOCUMENT_POSITION_PRECEDING)) {
+    while (item.compareDocumentPosition(before) & Node.DOCUMENT_POSITION_PRECEDING) {
+      item.after(item.previousElementSibling);
+      moved = true;
+    }
+  } else {
+    while (item.nextElementSibling && item.nextElementSibling !== before) {
+      item.before(item.nextElementSibling);
+      moved = true;
+    }
+  }
+  if (moved) renumberNightOrderDom();
+  // vicino ai bordi dello schermo la pagina scorre da sola
+  if (y < 90) window.scrollBy(0, -10);
+  else if (y > window.innerHeight - 90) window.scrollBy(0, 10);
+}
+
+function endNightOrderDrag(e) {
+  if (!nightOrderDrag) return;
+  const { item, handle, startIds } = nightOrderDrag;
+  handle.removeEventListener('pointermove', onNightOrderDragMove);
+  handle.removeEventListener('pointerup', endNightOrderDrag);
+  handle.removeEventListener('pointercancel', endNightOrderDrag);
+  handle.removeEventListener('lostpointercapture', endNightOrderDrag);
+  try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
+  item.classList.remove('dragging');
+  nightOrderDrag = null;
+  const ids = getNightOrderDomIds();
+  if (ids.join('|') !== startIds.join('|')) commitNightOrder(ids);
+}
+
+function moveNightOrder(roleId, delta) {
+  const ids = getNightOrderRoles(rolesDB).map(r => r.id);
+  const from = ids.indexOf(roleId);
+  const to = from + delta;
+  if (from === -1 || to < 0 || to >= ids.length) return;
+  [ids[from], ids[to]] = [ids[to], ids[from]];
+  vibrate('tap');
+  commitNightOrder(ids);
+}
+
+function commitNightOrder(ids) {
+  doWithUndo('🌙 Ordine di chiamata aggiornato', () => {
+    rolesDB = applyNightOrder(rolesDB, ids);
+    saveRolesToStorage();
+    renderEditorRolesList();
+    if (activeMatch && document.getElementById('screenNarrator').classList.contains('active')) renderNarratorDashboard();
+  });
+}
+
+/* ---------- Finestra "Crea / Modifica ruolo" ---------- */
+function fillSelectOptions(id, entries) {
+  document.getElementById(id).innerHTML = entries.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+}
+
 function openRoleFormModal(roleId) {
   const isEdit = !!roleId;
   document.getElementById('roleFormTitle').textContent = isEdit ? '✏️ Modifica Ruolo' : '➕ Crea Nuovo Ruolo';
+  fillSelectOptions('rfWake', VALID_WAKE_TIMINGS.map(k => [k, WAKE_TIMING_LABELS[k].short]));
+  fillSelectOptions('rfDeathAction', DEATH_ACTION_KEYS.map(k => [k, DEATH_ACTIONS[k].label]));
+  fillSelectOptions('rfVictory', VICTORY_KEYS.map(k => [k, VICTORY_TYPES[k].label]));
+  document.getElementById('rfTraits').innerHTML = TRAIT_KEYS.map(k =>
+    `<label class="check-row"><input type="checkbox" id="rfTrait_${k}"> ${escapeHtml(TRAIT_LABELS[k])}</label>`).join('');
 
-  if (isEdit) {
-    const r = getRoleById(roleId);
-    document.getElementById('rfId').value = r.id;
-    document.getElementById('rfIcon').value = r.icon;
-    document.getElementById('rfName').value = r.name;
-    document.getElementById('rfFaction').value = r.faction;
-    document.getElementById('rfWhat').value = r.whatYouDo;
-    document.getElementById('rfWin').value = r.howYouWin;
-    document.getElementById('rfWake').value = r.wakeTiming;
-    document.getElementById('rfPriority').value = r.priority;
-    document.getElementById('rfNarratorPhrase').value = r.narratorPhrase || '';
-    document.getElementById('rfNarratorNote').value = r.narratorNote || '';
-    document.getElementById('rfIsPair').checked = !!r.isPair;
-    fillRoleFormAction(roleNightAction(r), roleActionRules(r));
-  } else {
-    document.getElementById('rfId').value = '';
-    document.getElementById('rfIcon').value = '🧙‍♀️';
-    document.getElementById('rfName').value = '';
-    document.getElementById('rfFaction').value = 'Villaggio';
-    document.getElementById('rfWhat').value = '';
-    document.getElementById('rfWin').value = 'Vinci col villaggio.';
-    document.getElementById('rfWake').value = 'ogni_notte';
-    document.getElementById('rfPriority').value = 5;
-    document.getElementById('rfNarratorPhrase').value = '';
-    document.getElementById('rfNarratorNote').value = '';
-    document.getElementById('rfIsPair').checked = false;
-    fillRoleFormAction('none', { notSelf: true, notSameTwice: false, notWolves: false });
-  }
+  const r = isEdit ? getRoleById(roleId) : {
+    id: '', icon: '🧙‍♀️', name: '', faction: 'Villaggio', whatYouDo: '', howYouWin: 'Vinci col villaggio.',
+    wakeTiming: 'ogni_notte', narratorPhrase: '', narratorNote: '', isPair: false,
+    nightAction: 'none', actionRules: { notSelf: true }, wakesWithWolves: false, deathAction: 'none', victory: 'faction', traits: {}, markText: ''
+  };
+  document.getElementById('rfId').value = r.id;
+  document.getElementById('rfIcon').value = r.icon;
+  document.getElementById('rfName').value = r.name;
+  document.getElementById('rfFaction').value = r.faction;
+  document.getElementById('rfWhat').value = r.whatYouDo;
+  document.getElementById('rfWin').value = r.howYouWin;
+  document.getElementById('rfWake').value = VALID_WAKE_TIMINGS.includes(r.wakeTiming) ? r.wakeTiming : 'mai';
+  document.getElementById('rfNarratorPhrase').value = r.narratorPhrase || '';
+  document.getElementById('rfNarratorNote').value = r.narratorNote || '';
+  document.getElementById('rfIsPair').checked = !!r.isPair;
+  document.getElementById('rfWakesWithWolves').checked = roleWakesWithWolves(r);
+  document.getElementById('rfDeathAction').value = roleDeathAction(r);
+  document.getElementById('rfVictory').value = roleVictory(r);
+  const traits = roleTraits(r);
+  TRAIT_KEYS.forEach(k => { document.getElementById(`rfTrait_${k}`).checked = !!traits[k]; });
+  document.getElementById('rfMarkText').value = roleNightAction(r) === 'mark' ? roleMarkText(r) : '';
+  // Le regole avanzate si aprono da sole se il ruolo ne usa qualcuna
+  document.getElementById('rfAdvanced').open = roleWakesWithWolves(r) || roleDeathAction(r) !== 'none' || roleVictory(r) !== 'faction' || TRAIT_KEYS.some(k => traits[k]);
+  fillRoleFormAction(roleNightAction(r), roleActionRules(r));
 
   document.getElementById('modalRoleForm').classList.add('active');
+  document.querySelector('#modalRoleForm .modal-box').scrollTop = 0;
 }
 
 // Menu "Cosa fa di notte" con tutte le azioni che la guida sa gestire
 function fillRoleFormAction(action, rules) {
-  const select = document.getElementById('rfNightAction');
-  select.innerHTML = NIGHT_ACTION_KEYS.map(k => `<option value="${k}">${escapeHtml(NIGHT_ACTIONS[k].label)}</option>`).join('');
-  select.value = action;
-  document.getElementById('rfRuleNotSelf').checked = !!rules.notSelf;
-  document.getElementById('rfRuleNotSameTwice').checked = !!rules.notSameTwice;
-  document.getElementById('rfRuleNotWolves').checked = !!rules.notWolves;
+  fillSelectOptions('rfNightAction', NIGHT_ACTION_KEYS.map(k => [k, NIGHT_ACTIONS[k].label]));
+  document.getElementById('rfNightAction').value = action;
+  ACTION_RULE_KEYS.forEach(k => { document.getElementById(`rfRule_${k}`).checked = !!rules[k]; });
   updateRoleFormActionUI();
 }
 
@@ -879,6 +1057,8 @@ function onRoleFormActionChange() {
   // Un ruolo con un'azione notturna deve svegliarsi: se era "Mai", passa a "Ogni notte"
   const wake = document.getElementById('rfWake');
   if (document.getElementById('rfNightAction').value !== 'none' && wake.value === 'mai') wake.value = 'ogni_notte';
+  const markField = document.getElementById('rfMarkText');
+  if (document.getElementById('rfNightAction').value === 'mark' && !markField.value.trim()) markField.value = roleMarkText({});
   updateRoleFormActionUI();
 }
 
@@ -896,14 +1076,19 @@ function updateRoleFormActionUI() {
     protect: 'Il giocatore scelto non muore stanotte (né per i lupi né per altri).',
     investigate: 'La guida ti dice se fare SÌ (è un lupo) o NO con la testa.',
     medium: 'La guida ti dice se il bruciato di ieri era un lupo.',
-    mark: 'Al mattino la guida annuncia il segno sul giocatore scelto.',
+    mark: 'Al mattino la guida ti fa leggere la frase qui sotto sul giocatore scelto.',
     copy: 'Se copia un lupo o chi indaga diventa quel ruolo, altrimenti diventa Contadino.',
+    witch: 'Vede la vittima dei lupi: può salvarla una volta e uccidere una volta in tutta la partita.',
     note: 'La scelta viene solo annotata (la ritrovi nel riepilogo).'
   };
   document.getElementById('rfActionHint').textContent = sleeps
-    ? 'Questo ruolo non si sveglia mai: la guida non lo chiama.'
+    ? 'Questo ruolo non si sveglia da solo: la guida non lo chiama (può comunque svegliarsi con i Lupi, nelle regole avanzate).'
     : (hints[action] || '');
-  document.getElementById('rfRulesBox').style.display = !sleeps && NIGHT_ACTIONS[action] && NIGHT_ACTIONS[action].target ? 'flex' : 'none';
+  const hasTarget = !sleeps && NIGHT_ACTIONS[action] && NIGHT_ACTIONS[action].target;
+  document.getElementById('rfRulesBox').style.display = hasTarget ? 'flex' : 'none';
+  // la Strega ha già le sue pozioni "una volta sola": la regola non serve
+  document.getElementById('rfRuleRow_oncePerGame').style.display = action === 'witch' ? 'none' : '';
+  document.getElementById('rfMarkTextBox').style.display = !sleeps && action === 'mark' ? 'flex' : 'none';
 }
 
 function closeRoleFormModal() {
@@ -918,16 +1103,28 @@ function saveRoleFromForm() {
   const whatYouDo = document.getElementById('rfWhat').value.trim();
   const howYouWin = document.getElementById('rfWin').value.trim();
   const wakeTiming = document.getElementById('rfWake').value;
-  const priority = Math.min(10, Math.max(1, parseInt(document.getElementById('rfPriority').value, 10) || 5));
   const narratorPhrase = document.getElementById('rfNarratorPhrase').value.trim();
   const narratorNote = document.getElementById('rfNarratorNote').value.trim();
   const isPair = document.getElementById('rfIsPair').checked;
   const nightAction = document.getElementById('rfNightAction').value;
-  const actionRules = {
-    notSelf: document.getElementById('rfRuleNotSelf').checked,
-    notSameTwice: document.getElementById('rfRuleNotSameTwice').checked,
-    notWolves: document.getElementById('rfRuleNotWolves').checked
+  const actionRules = {};
+  ACTION_RULE_KEYS.forEach(k => { actionRules[k] = document.getElementById(`rfRule_${k}`).checked; });
+  if (nightAction === 'witch') actionRules.oncePerGame = false;
+  const traits = {};
+  TRAIT_KEYS.forEach(k => { traits[k] = document.getElementById(`rfTrait_${k}`).checked; });
+  const capabilities = {
+    nightAction,
+    actionRules,
+    wakesWithWolves: document.getElementById('rfWakesWithWolves').checked,
+    deathAction: document.getElementById('rfDeathAction').value,
+    victory: document.getElementById('rfVictory').value,
+    traits,
+    markText: nightAction === 'mark' ? document.getElementById('rfMarkText').value.trim() : ''
   };
+  if (nightAction === 'mark' && !capabilities.markText.includes('{nome}')) {
+    showToast('Nella frase del mattino scrivi {nome} dove va il nome del giocatore scelto.', 'warn');
+    return;
+  }
 
   if (!name || !whatYouDo || !howYouWin) {
     showToast('Compila Nome, "Cosa fai" e "Come vinci"!', 'warn');
@@ -939,14 +1136,19 @@ function saveRoleFromForm() {
     return;
   }
 
+  // Ordine di chiamata: un ruolo che inizia a svegliarsi va in fondo alla notte (poi si sposta trascinandolo)
+  const lastPriority = () => Math.min(MAX_PRIORITY, Math.max(0, ...getNightOrderRoles(rolesDB).map(r => Number(r.priority) || 0)) + 1);
   if (idVal) {
     const idx = rolesDB.findIndex(r => r.id === idVal);
     if (idx !== -1) {
-      rolesDB[idx] = { id: idVal, name, icon, faction, whatYouDo, howYouWin, wakeTiming, priority, narratorPhrase, narratorNote, isPair, nightAction, actionRules };
+      const old = rolesDB[idx];
+      const priority = old.wakeTiming === 'mai' && wakeTiming !== 'mai' ? lastPriority() : old.priority;
+      rolesDB[idx] = { id: idVal, name, icon, faction, whatYouDo, howYouWin, wakeTiming, priority, narratorPhrase, narratorNote, isPair, ...capabilities };
     }
   } else {
     const newId = 'custom_' + Date.now();
-    rolesDB.push({ id: newId, name, icon, faction, whatYouDo, howYouWin, wakeTiming, priority, narratorPhrase, narratorNote, isPair, nightAction, actionRules });
+    const priority = wakeTiming === 'mai' ? 10 : lastPriority();
+    rolesDB.push({ id: newId, name, icon, faction, whatYouDo, howYouWin, wakeTiming, priority, narratorPhrase, narratorNote, isPair, ...capabilities });
   }
 
   saveRolesToStorage();
@@ -979,8 +1181,10 @@ function confirmDeleteRole(roleId) {
 }
 
 function confirmResetDefaultRoles() {
-  doWithUndo('🔄 Ripristinati i 13 ruoli predefiniti', () => {
+  doWithUndo('🔄 Ripristinati i ruoli base', () => {
     rolesDB = JSON.parse(JSON.stringify(DEFAULT_ROLES));
+    appSettings.knownDefaultRoleIds = DEFAULT_ROLES.map(r => r.id);
+    saveSettingsToStorage();
     saveRolesToStorage();
     pruneDeckOfMissingRoles();
     renderEditorRolesList();
@@ -1172,7 +1376,9 @@ function getAliveCounts() {
 
 function evaluateVictoryCondition() {
   if (!activeMatch || activeMatch.autoResolve === false) return null;
-  // Regole in rules.js: Giullare bruciato al rogo, lupi finiti, parità dei lupi, Criceto sopravvissuto.
+  // Prima si risolvono i colpi di chi muore (es. il Cacciatore), poi si controlla la vittoria.
+  if ((activeMatch.pendingDeathActions || []).length) return null;
+  // Regole in rules.js: vittorie solitarie (rogo, ultimo vivo, sopravvissuto), lupi finiti, parità dei lupi.
   return evaluateVictory(activeMatch.players, findRoleOrNull);
 }
 
@@ -1250,8 +1456,13 @@ function isRulesEnforced() {
   return !!activeMatch && activeMatch.enforceRules !== false;
 }
 
+// Piano della notte in corso (tiene conto dei poteri già usati, come le pozioni della Strega)
+function currentNightPlan() {
+  return buildNightPlan(activeMatch.players, rolesDB, activeMatch.turn, activeMatch.usedPowers || {});
+}
+
 function getGuidePlan() {
-  if (activeMatch.phase === 'night') return buildNightPlan(activeMatch.players, rolesDB, activeMatch.turn);
+  if (activeMatch.phase === 'night') return currentNightPlan();
   return DAY_PLAN_KINDS.map(kind => ({ key: kind, kind, roleIds: [], holders: [], aliveHolders: [], emptyCall: false }));
 }
 
@@ -1340,6 +1551,7 @@ function renderNarratorGuide() {
 
   const body = document.getElementById('guideStep');
   body.innerHTML = `
+    ${renderDeathActionsCard()}
     <div class="guide-title">${escapeHtml(getStepTitle(step))}</div>
     ${renderGuideStepBody(step, plan)}
   `;
@@ -1415,13 +1627,19 @@ function renderRoleStep(step, plan) {
 
   html += `<div class="guide-phrase">${escapeHtml(rolePhrase(mainRole))}</div>`;
 
-  // Bambina: può sbirciare mentre i lupi sono svegli
+  // Chi può sbirciare mentre i lupi sono svegli (es. la Bambina)
   if (step.kind === 'wolves') {
-    const girl = activeMatch.players.find(p => !p.isDead && p.roleId === 'bambina');
-    if (girl) html += `<div class="guide-info">👧 La Bambina (<strong>${escapeHtml(girl.name)}</strong>) può sbirciare: tienila d'occhio.</div>`;
+    activeMatch.players.filter(p => !p.isDead && roleTraits(findRoleOrNull(p.roleId)).peeksAtWolves).forEach(p => {
+      const r = getRoleById(p.roleId);
+      html += `<div class="guide-info">${escapeHtml(r.icon)} ${escapeHtml(r.name)} (<strong>${escapeHtml(p.name)}</strong>) può sbirciare: tienila d'occhio.</div>`;
+    });
   }
 
-  if (!step.emptyCall && action.target) {
+  if (!step.emptyCall && step.exhausted) {
+    html += `<div class="guide-empty">🔒 ${step.kind === 'witch' ? 'Ha già usato entrambe le pozioni' : 'Ha già usato il suo potere (una volta per partita)'}: chiamalo lo stesso con la sua frase, così nessuno capisce, poi vai avanti.</div>`;
+  } else if (!step.emptyCall && step.kind === 'witch') {
+    html += renderWitchStep(step, plan);
+  } else if (!step.emptyCall && action.target) {
     const question = step.kind === 'kill' ? `Chi colpisce ${mainRole.name}?` : action.question;
     const options = getTargetOptions(step, activeMatch.players, rolesDB, activeMatch.prevNightChoices || {}, isRulesEnforced());
     const chosen = (activeMatch.nightChoices || {})[step.key];
@@ -1446,6 +1664,69 @@ function renderRoleStep(step, plan) {
   return html;
 }
 
+// Strega (o ruolo con le pozioni): vittima dei lupi da salvare e pozione della morte
+function renderWitchStep(step, plan) {
+  const choices = activeMatch.nightChoices || {};
+  const wolvesStep = plan.find(st => st.kind === 'wolves' && !st.emptyCall);
+  const victimId = wolvesStep ? choices[wolvesStep.key] : null;
+  const victim = victimId ? activeMatch.players.find(p => p.id === victimId) : null;
+  const saveKey = witchSaveKey(step.key);
+  const colors = getMatchColors();
+  let html = '<div class="potion-box">';
+
+  html += '<div class="potion-title">💚 Pozione della vita</div>';
+  if (step.saveUsed) {
+    html += '<div class="guide-muted">Già usata in una notte precedente.</div>';
+  } else if (!wolvesStep) {
+    html += '<div class="guide-muted">Stanotte i lupi non hanno una vittima.</div>';
+  } else if (!victim) {
+    html += `<div class="guide-muted">I lupi non hanno ancora scelto. <button class="btn btn-sm" onclick="guideJump('${wolvesStep.key}')">🐺 Torna ai Lupi</button></div>`;
+  } else {
+    const isSaving = choices[saveKey] === victim.id;
+    html += `
+      <div class="guide-info">Indica alla Strega la vittima dei lupi: <strong>${escapeHtml(victim.name)}</strong>.</div>
+      <button class="target-btn potion-btn${isSaving ? ' selected' : ''}" onclick="toggleWitchSave('${step.key}', '${victim.id}')">
+        <span class="target-name">${avatarHtml(victim.name, colors[victim.id], 'sm')} ${isSaving ? '💚 Salvato con la pozione' : `Salva ${escapeHtml(victim.name)}`}</span>
+      </button>`;
+  }
+
+  html += '<div class="potion-title">☠️ Pozione della morte</div>';
+  if (step.killUsed) {
+    html += '<div class="guide-muted">Già usata in una notte precedente.</div>';
+  } else {
+    const options = getTargetOptions(step, activeMatch.players, rolesDB, activeMatch.prevNightChoices || {}, isRulesEnforced());
+    const chosen = choices[step.key];
+    html += `
+      <div class="guide-question">Chi avvelena? (se vuole)</div>
+      <div class="target-grid">
+        ${options.map(o => `
+          <button class="target-btn${o.id === chosen ? ' selected' : ''}" ${o.disabled ? 'disabled' : ''} onclick="selectGuideTarget('${step.key}', '${o.id}')">
+            <span class="target-name">${avatarHtml(o.name, colors[o.id], 'sm')} ${escapeHtml(o.name)}</span>
+            ${o.reason ? `<span class="target-reason">${escapeHtml(o.reason)}</span>` : ''}
+          </button>`).join('')}
+      </div>`;
+    if (chosen) {
+      const target = activeMatch.players.find(p => p.id === chosen);
+      const preview = resolveNight(activeMatch.players, plan, choices, rolesDB);
+      const isSaved = preview.saved.some(x => x.playerId === chosen && x.from === 'kill');
+      if (target) html += `<div class="guide-result result-danger">☠️ Avvelenato: <strong>${escapeHtml(target.name)}</strong>${isSaved ? '<br>🛡️ È protetto stanotte: si salverà.' : '<br>Morirà all\'alba.'}</div>`;
+    }
+  }
+  html += '<div class="guide-muted">Se la Strega non vuole usare le pozioni, tocca Avanti.</div>';
+  return html + '</div>';
+}
+
+function toggleWitchSave(stepKey, victimId) {
+  vibrate('tap');
+  if (!activeMatch.nightChoices) activeMatch.nightChoices = {};
+  const key = witchSaveKey(stepKey);
+  if (activeMatch.nightChoices[key] === victimId) delete activeMatch.nightChoices[key];
+  else activeMatch.nightChoices[key] = victimId;
+  saveMatchToStorage();
+  renderNarratorGuide();
+  renderNarratorPlayersList();
+}
+
 function renderChoiceResult(step, targetId, plan) {
   const target = activeMatch.players.find(p => p.id === targetId);
   if (!target) return '';
@@ -1457,14 +1738,14 @@ function renderChoiceResult(step, targetId, plan) {
 
   switch (step.kind) {
     case 'wolves':
-      return `<div class="guide-result result-danger">🐺 Vittima dei lupi: ${name}${isSaved ? '<br>🛡️ È protetto stanotte: si salverà.' : ''}${isImmune ? '<br>🐹 È il Criceto Mannaro: immune ai lupi, non morirà.' : ''}</div>`;
+      return `<div class="guide-result result-danger">🐺 Vittima dei lupi: ${name}${isSaved ? '<br>🛡️ È protetto stanotte: si salverà.' : ''}${isImmune ? `<br>${escapeHtml(getRoleById(target.roleId).icon)} È ${escapeHtml(getRoleById(target.roleId).name)}: immune ai lupi, non morirà.` : ''}</div>`;
     case 'kill':
       return `<div class="guide-result result-danger">${escapeHtml(mainRole.icon)} Colpito: ${name}${isSaved ? '<br>🛡️ È protetto stanotte: si salverà.' : '<br>Morirà all\'alba.'}</div>`;
     case 'protect':
       return `<div class="guide-result result-good">🛡️ Protetto stanotte: ${name}</div>`;
     case 'investigate': {
       const answer = investigateAnswer(target, findRoleOrNull);
-      if (answer.hamster) return `<div class="guide-result result-danger">👎 Fai NO con la testa.<br>🐹 ${name} è il Criceto Mannaro: morirà all'alba!</div>`;
+      if (answer.dies) return `<div class="guide-result result-danger">👎 Fai NO con la testa.<br>${escapeHtml(getRoleById(target.roleId).icon)} ${name} è ${escapeHtml(getRoleById(target.roleId).name)}: se lo scoprono muore, morirà all'alba!</div>`;
       return answer.isWolf
         ? `<div class="guide-result result-danger">👍 Fai SÌ con la testa: ${name} è un lupo.</div>`
         : `<div class="guide-result result-good">👎 Fai NO con la testa: ${name} non è un lupo.</div>`;
@@ -1507,7 +1788,7 @@ function selectGuideTarget(stepKey, playerId) {
 
 function describeDeathCause(cause, roleIds) {
   if (cause === 'lupi') return 'sbranato dai lupi';
-  if (cause === 'indagine') return 'era il Criceto ed è stato scoperto';
+  if (cause === 'indagine') return 'è stato scoperto da chi indaga (e per lui è fatale)';
   const role = getRoleById((roleIds || [])[0]);
   return `colpito da ${role.icon} ${role.name}`;
 }
@@ -1517,15 +1798,21 @@ function renderDawnStep(plan) {
   const nameOf = id => escapeHtml((activeMatch.players.find(p => p.id === id) || { name: '?' }).name);
   const rows = [];
   res.deaths.forEach(d => rows.push(`💀 <strong>${nameOf(d.playerId)}</strong> muore: ${escapeHtml(describeDeathCause(d.cause, d.roleIds))}`));
-  res.saved.forEach(x => rows.push(`🛡️ <strong>${nameOf(x.playerId)}</strong> era nel mirino ma è protetto: si salva`));
-  res.immune.forEach(x => rows.push(`🐹 <strong>${nameOf(x.playerId)}</strong> è il Criceto: immune ai lupi`));
+  res.saved.forEach(x => {
+    const potion = res.entries.some(e => e.kind === 'witch-save' && e.targetId === x.playerId);
+    rows.push(potion
+      ? `💚 <strong>${nameOf(x.playerId)}</strong> era la vittima dei lupi: salvato dalla pozione`
+      : `🛡️ <strong>${nameOf(x.playerId)}</strong> era nel mirino ma è protetto: si salva`);
+  });
+  res.immune.forEach(x => rows.push(`🛡️ <strong>${nameOf(x.playerId)}</strong> è immune ai lupi: non muore`));
   res.marks.forEach(m => rows.push(`${escapeHtml(getRoleById(m.roleId).icon)} Segno per <strong>${nameOf(m.playerId)}</strong> (da annunciare)`));
   res.copies.forEach(c => {
     const nr = c.newRoleId ? getRoleById(c.newRoleId) : null;
     rows.push(`🎭 <strong>${nameOf(c.playerId)}</strong> diventa ${nr ? `${escapeHtml(nr.icon)} ${escapeHtml(nr.name)}` : 'nessun ruolo nuovo'}`);
   });
 
-  const missing = plan.filter(st => !st.emptyCall && (NIGHT_ACTIONS[st.kind] || {}).target && !(activeMatch.nightChoices || {})[st.key]);
+  // Le pozioni sono facoltative: non si segnalano come scelta mancante
+  const missing = plan.filter(st => !st.emptyCall && !st.exhausted && st.kind !== 'witch' && (NIGHT_ACTIONS[st.kind] || {}).target && !(activeMatch.nightChoices || {})[st.key]);
   const missingHtml = missing.length
     ? `<div class="guide-empty">⚠️ Manca la scelta di: ${missing.map(st => `<button class="btn btn-sm" onclick="guideJump('${st.key}')">${escapeHtml(getStepChipLabel(st))}</button>`).join(' ')}</div>`
     : '';
@@ -1575,7 +1862,7 @@ function renderMorningStep() {
 
 function renderDebateStep() {
   const ghosts = activeMatch.players.filter(p => p.isGhost).map(p => p.name);
-  const mayors = activeMatch.players.filter(p => !p.isDead && isMayorRole(findRoleOrNull(p.roleId))).map(p => p.name);
+  const mayors = activeMatch.players.filter(p => !p.isDead && roleTraits(findRoleOrNull(p.roleId)).doubleVote).map(p => p.name);
   return `
     <div class="guide-phrase">«Il villaggio discute: chi sono i lupi? Il tempo parte adesso!»</div>
     <div class="timer-box">
@@ -1591,7 +1878,7 @@ function renderDebateStep() {
     </div>
     <div class="guide-info">
       👻 Fantasma: ${ghosts.length ? `<strong>${escapeHtml(ghosts.join(', '))}</strong> (zitto, ma vota)` : 'nessuno'}<br>
-      🎖️ Voto doppio: ${mayors.length ? `<strong>${escapeHtml(mayors.join(', '))}</strong>` : 'nessun Sindaco vivo'}
+      🎖️ Voto doppio: ${mayors.length ? `<strong>${escapeHtml(mayors.join(', '))}</strong>` : 'nessuno'}
     </div>
   `;
 }
@@ -1609,7 +1896,7 @@ function renderVoteStep() {
   return `
     <div class="guide-phrase">«È il momento di votare: ognuno indichi chi vuole mandare al rogo.»</div>
     <button class="btn btn-warning" onclick="openVoteModal()">🗳️ Apri la votazione</button>
-    <div class="guide-muted">L'app conta i voti (Sindaco doppio, il Fantasma vota) e gestisce i pareggi. Se oggi nessuno va al rogo, tocca Avanti.</div>
+    <div class="guide-muted">L'app conta i voti (il voto doppio vale 2, il Fantasma vota) e gestisce i pareggi. Se oggi nessuno va al rogo, tocca Avanti.</div>
   `;
 }
 
@@ -1629,9 +1916,16 @@ function advanceToDay() {
   pushUndoSnapshot();
 
   const turn = activeMatch.turn;
-  const plan = buildNightPlan(activeMatch.players, rolesDB, turn);
+  const plan = currentNightPlan();
   const res = resolveNight(activeMatch.players, plan, activeMatch.nightChoices || {}, rolesDB);
   const byId = id => activeMatch.players.find(p => p.id === id);
+
+  // Poteri usati stanotte (pozioni, poteri "una volta per partita")
+  const used = activeMatch.usedPowers || {};
+  computePowerUsage(activeMatch.players, plan, activeMatch.nightChoices || {}, rolesDB).forEach(u => {
+    used[u.playerId] = Array.from(new Set((used[u.playerId] || []).concat(u.slot)));
+  });
+  activeMatch.usedPowers = used;
 
   res.copies.forEach(c => {
     const p = byId(c.playerId);
@@ -1813,18 +2107,23 @@ function getNightTagsByPlayer() {
     investigate: `${mainRole.icon} Indagato`,
     mark: `${mainRole.icon} Segno`,
     copy: `${mainRole.icon} Copiato`,
+    witch: `${mainRole.icon} Avvelenato`,
     note: `${mainRole.icon} Indicato`
   })[step.kind];
 
   if (activeMatch.phase === 'night') {
-    const plan = buildNightPlan(activeMatch.players, rolesDB, activeMatch.turn);
+    const plan = currentNightPlan();
     plan.forEach(step => {
       const target = (activeMatch.nightChoices || {})[step.key];
       if (!target) return;
       const text = labelFor(step, getStepRoles(step)[0] || {});
       if (text) add(target, text);
-      // chi è stato protetto ieri non può esserlo di nuovo (se la regola è attiva)
     });
+    plan.filter(step => step.kind === 'witch').forEach(step => {
+      const saved = (activeMatch.nightChoices || {})[witchSaveKey(step.key)];
+      if (saved) add(saved, `${getStepRoles(step)[0].icon} Pozione della vita`);
+    });
+    // chi è stato protetto ieri non può esserlo di nuovo (se la regola è attiva)
     Object.entries(activeMatch.prevNightChoices || {}).forEach(([key, id]) => {
       const step = plan.find(st => st.key === key);
       if (step && step.kind === 'protect' && roleActionRules(findRoleOrNull(step.roleIds[0])).notSameTwice) add(id, '🛡️ Protetto ieri');
@@ -1838,7 +2137,7 @@ function getNightTagsByPlayer() {
 
 function renderNarratorPlayersList() {
   const container = document.getElementById('narratorPlayersList');
-  container.innerHTML = '';
+  container.innerHTML = renderDeathActionsCard();
   const nightTags = getNightTagsByPlayer();
   const colors = getMatchColors();
 
@@ -1848,7 +2147,7 @@ function renderNarratorPlayersList() {
     const factionClass = getFactionBadgeClass(role.faction);
 
     let badgesHtml = '';
-    const deathWhen = describeDeath(p);
+    const deathWhen = escapeHtml(describeDeath(p));
     if (p.isGhost) {
       badgesHtml += `<span class="status-pill status-ghost">👻 Fantasma (vota in silenzio)${deathWhen ? ' • ' + deathWhen : ''}</span>`;
     } else if (p.isDead) {
@@ -1893,6 +2192,53 @@ function renderNarratorPlayersList() {
   });
 }
 
+/* ---------- Colpo di chi muore (es. il Cacciatore) ---------- */
+function getPendingDeathActions() {
+  return (activeMatch.pendingDeathActions || [])
+    .map(a => activeMatch.players.find(p => p.id === a.playerId))
+    .filter(p => p && p.isDead);
+}
+
+// Riquadro "chi porta con sé?": in cima alla guida e alla scheda Giocatori finché non si sceglie
+function renderDeathActionsCard() {
+  const pending = getPendingDeathActions();
+  if (!pending.length) return '';
+  const colors = getMatchColors();
+  return pending.map(shooter => {
+    const role = getRoleById(shooter.roleId);
+    const targets = activeMatch.players.filter(p => !p.isDead);
+    return `
+      <div class="death-shot-card">
+        <div class="guide-title">${escapeHtml(role.icon)} ${escapeHtml(shooter.name)} è morto: chi porta con sé?</div>
+        <div class="guide-phrase">«${escapeHtml(shooter.name)} si rivela: ${escapeHtml(role.name)}! Prima di morire, sceglie qualcuno da portare con sé...»</div>
+        <div class="target-grid">
+          ${targets.map(t => `
+            <button class="target-btn" onclick="resolveDeathShot('${shooter.id}', '${t.id}')">
+              <span class="target-name">${avatarHtml(t.name, colors[t.id], 'sm')} ${escapeHtml(t.name)}</span>
+            </button>`).join('')}
+        </div>
+        <button class="btn btn-sm" onclick="resolveDeathShot('${shooter.id}', '')">Nessuno</button>
+        <div class="guide-muted">Finché non scegli, l'app non controlla la vittoria.</div>
+      </div>`;
+  }).join('');
+}
+
+function resolveDeathShot(shooterId, targetId) {
+  const shooter = activeMatch.players.find(p => p.id === shooterId);
+  const target = targetId ? activeMatch.players.find(p => p.id === targetId) : null;
+  if (!shooter) return;
+  const message = target ? `${getRoleById(shooter.roleId).icon} ${shooter.name} ha portato con sé ${target.name}` : `${shooter.name} non ha portato con sé nessuno`;
+  doWithUndo(message, () => {
+    activeMatch.pendingDeathActions = (activeMatch.pendingDeathActions || []).filter(a => a.playerId !== shooterId);
+    if (target && !target.isDead) {
+      killPlayer(target, 'altro', { killedBy: shooter.id });
+    } else {
+      saveMatchToStorage();
+      renderNarratorDashboard();
+    }
+  });
+}
+
 function toggleNotePin(playerId) {
   const p = activeMatch.players.find(item => item.id === playerId);
   if (!p) return;
@@ -1905,7 +2251,9 @@ function describeDeath(p) {
   if (!p.isDead || !p.diedOnTurn) return '';
   if (p.deathCause === 'rogo') return `🔥 Rogo G${p.diedOnTurn}`;
   if (p.deathCause === 'notte') return `🌙 Notte ${p.diedOnTurn}`;
-  return `G${p.diedOnTurn}`;
+  const killer = p.killedBy ? activeMatch.players.find(x => x.id === p.killedBy) : null;
+  if (killer) return `🎯 Portato via da ${killer.name}`;
+  return p.diedInPhase === 'night' ? `🌙 Notte ${p.diedOnTurn}` : `G${p.diedOnTurn}`;
 }
 
 // ❌ sulla riga del giocatore: di notte segna subito la morte; di giorno chiede come è morto.
@@ -1945,12 +2293,20 @@ function confirmDeathCause(cause) {
 
 // opts.silent = true: niente salvataggio né ridisegno (li fa chi chiama, per più morti insieme)
 // opts.quiet = true: niente avviso del rogo (lo mostra già "Annulla")
+// opts.killedBy = id di chi l'ha portato con sé morendo (es. il Cacciatore)
 function killPlayer(p, cause, opts = {}) {
   const role = getRoleById(p.roleId);
   p.isDead = true;
   p.deathCause = cause;
   p.diedOnTurn = activeMatch.turn;
   p.diedInPhase = cause === 'notte' ? 'night' : cause === 'rogo' ? 'day' : activeMatch.phase;
+  p.killedBy = opts.killedBy || null;
+
+  // Chi quando muore porta con sé un giocatore (es. il Cacciatore): la guida chiede chi
+  if (hasDeathShot(findRoleOrNull(p.roleId))) {
+    if (!Array.isArray(activeMatch.pendingDeathActions)) activeMatch.pendingDeathActions = [];
+    if (!activeMatch.pendingDeathActions.some(a => a.playerId === p.id)) activeMatch.pendingDeathActions.push({ playerId: p.id });
+  }
 
   // Riattiva controllo banner vittoria a ogni nuova eliminazione
   activeMatch.victoryDismissed = false;
@@ -1978,6 +2334,8 @@ function revivePlayer(p) {
   p.deathCause = null;
   p.diedOnTurn = null;
   p.diedInPhase = null;
+  p.killedBy = null;
+  activeMatch.pendingDeathActions = (activeMatch.pendingDeathActions || []).filter(a => a.playerId !== p.id);
   showToast(`💚 ${p.name} è di nuovo vivo.`);
   saveMatchToStorage();
   renderNarratorDashboard();
@@ -2260,7 +2618,7 @@ function escapeHtml(str) {
 
 /* =========================================================================
    17. VOTAZIONE AL ROGO
-   Ogni votante sceglie chi vuole al rogo; il Sindaco vale 2, il Fantasma vota.
+   Ogni votante sceglie chi vuole al rogo; chi ha il voto doppio (es. il Sindaco) vale 2, il Fantasma vota.
    I voti restano salvati nella partita (activeMatch.vote) fino al cambio di fase.
 ========================================================================= */
 function getCurrentVote() {
@@ -2419,7 +2777,7 @@ function openSummaryModal() {
   // Cronologia: notti già risolte + le scelte della notte in corso
   const logs = (activeMatch.nightLogs || []).slice();
   if (activeMatch.phase === 'night') {
-    const plan = buildNightPlan(activeMatch.players, rolesDB, activeMatch.turn);
+    const plan = currentNightPlan();
     logs.push({ turn: activeMatch.turn, entries: resolveNight(activeMatch.players, plan, activeMatch.nightChoices || {}, rolesDB).entries });
   }
   const timeline = buildTimeline(activeMatch.players, logs, findRoleOrNull);
@@ -2590,13 +2948,6 @@ function renderGuide() {
   const roles = onlyDeck ? rolesDB.filter(r => deckIds.has(r.id)) : rolesDB;
   const ghostOn = activeMatch ? !!activeMatch.ghostRule : !!appSettings.ghostRule;
 
-  const wakeLabels = {
-    mai: 'non si sveglia di notte',
-    ogni_notte: 'si sveglia ogni notte',
-    solo_notte_1: 'si sveglia solo la prima notte',
-    solo_notte_2: 'si sveglia solo la seconda notte',
-    dalla_notte_2: 'si sveglia dalla seconda notte in poi'
-  };
   const factionIntro = {
     'Villaggio': 'Vincono quando tutti i lupi sono stati eliminati.',
     'Branco': 'Vincono quando sono tanti quanti gli altri giocatori vivi.',
@@ -2615,7 +2966,8 @@ function renderGuide() {
           <div class="guide-role">
             <div class="guide-role-name"><span class="guide-role-icon">${escapeHtml(r.icon)}</span> ${escapeHtml(r.name)}${r.isPair ? ' <span class="badge">👥 in coppia</span>' : ''}</div>
             <div>${escapeHtml(r.whatYouDo)}</div>
-            <div class="card-subtitle">🏆 ${escapeHtml(r.howYouWin)} • 🌙 ${escapeHtml(wakeLabels[r.wakeTiming] || '')}${r.wakeTiming !== 'mai' && roleNightAction(r) !== 'none' ? `: ${escapeHtml(NIGHT_ACTIONS[roleNightAction(r)].short)}` : ''}</div>
+            <div class="card-subtitle">🏆 ${escapeHtml(r.howYouWin)} • 🌙 ${escapeHtml((WAKE_TIMING_LABELS[r.wakeTiming] || WAKE_TIMING_LABELS.mai).long)}${r.wakeTiming !== 'mai' && roleNightAction(r) !== 'none' ? `: ${escapeHtml(NIGHT_ACTIONS[roleNightAction(r)].short)}` : ''}</div>
+            ${roleAbilityNotes(r).length ? `<div class="card-subtitle">✨ ${escapeHtml(roleAbilityNotes(r).join(' • '))}</div>` : ''}
           </div>`).join('')}
       </div>`;
   }).join('') || '<div class="card-subtitle">Nessun ruolo da mostrare.</div>';

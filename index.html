@@ -2373,7 +2373,8 @@
       gap: 8px;
     }
 
-    .level-choice {
+    .level-choice,
+    .mode-choice {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
@@ -2394,18 +2395,408 @@
       font-size: clamp(0.88rem, 4vw, 1rem);
     }
 
-    .level-choice span {
+    .level-choice span,
+    .mode-choice span {
       font-size: 0.8rem;
       color: var(--mist);
     }
 
-    .level-choice.active {
+    .level-choice.active,
+    .mode-choice.active {
       border-color: var(--moon);
       background: rgba(var(--rgb-moon), 0.1);
     }
 
-    .level-choice.active strong {
+    .level-choice.active strong,
+    .mode-choice.active strong {
       color: var(--moon);
+    }
+
+    /* ---------- 1.7: preparazione in tre tappe ---------- */
+    .setup-stepper {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      position: relative;
+    }
+
+    .setup-step {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 46px;
+      padding: 6px 4px;
+      border-radius: 99px;
+      border: 1.5px solid var(--line-strong);
+      background: var(--surface);
+      color: var(--mist);
+      font: inherit;
+      font-weight: 700;
+      font-size: 0.92rem;
+      cursor: pointer;
+    }
+
+    .setup-step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      background: var(--line);
+      color: var(--parchment);
+      font-family: var(--font-tale);
+      font-variant-numeric: lining-nums;
+    }
+
+    .setup-step.done {
+      color: var(--sage);
+      border-color: rgba(var(--rgb-sage), 0.5);
+    }
+
+    .setup-step.done .setup-step-num {
+      background: rgba(var(--rgb-sage), 0.25);
+      color: var(--sage);
+    }
+
+    .setup-step.current {
+      color: #1B1733;
+      background: var(--moon);
+      border-color: var(--moon);
+    }
+
+    .setup-step.current .setup-step-num {
+      background: rgba(27, 23, 51, 0.15);
+      color: #1B1733;
+    }
+
+    .setup-step:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .setup-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .sticky-status {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    #stickyStepLabel {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    #stickyDeckStatus {
+      font-size: 1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mode-switch {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mode-choice {
+      width: 100%;
+    }
+
+    .mode-choice span {
+      font-size: 0.86rem;
+    }
+
+    /* Senza Narratore: niente morti manuali e niente livello del Narratore */
+    .play-auto .narrator-only {
+      display: none;
+    }
+
+    @media (max-width: 359px) {
+      .setup-step-label {
+        font-size: 0.82rem;
+      }
+    }
+
+    /* ---------- 1.7: benvenuto al primo avvio ---------- */
+    .welcome-box {
+      max-width: 420px;
+      min-height: 420px;
+    }
+
+    .welcome-slide {
+      flex: 1;
+      flex-direction: column;
+      gap: 12px;
+      line-height: 1.5;
+    }
+
+    .welcome-art {
+      font-size: 3.4rem;
+      text-align: center;
+      padding: 18px 0 6px;
+      letter-spacing: 4px;
+    }
+
+    .welcome-title {
+      font-family: var(--font-tale);
+      font-weight: 700;
+      font-size: 1.5rem;
+      color: var(--parchment-strong);
+      text-align: center;
+    }
+
+    .welcome-list {
+      padding-left: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .welcome-dots {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .welcome-dots span {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--line-strong);
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    .welcome-dots span.active {
+      background: var(--moon);
+      transform: scale(1.25);
+    }
+
+    .welcome-actions {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 8px;
+    }
+
+    /* ---------- 1.7: backup ---------- */
+    .file-btn {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .file-btn input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    /* ---------- 1.7: vista per il tavolo ---------- */
+    .table-view {
+      position: fixed;
+      inset: 0;
+      z-index: 1200;
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+      padding: calc(18px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
+      background: radial-gradient(120% 70% at 50% 0%, #1F2547 0%, var(--ink) 60%, var(--ink-deep) 100%);
+      overflow-y: auto;
+    }
+
+    .table-view.open {
+      display: flex;
+    }
+
+    .table-head {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .table-phase {
+      font-family: var(--font-tale);
+      font-weight: 700;
+      font-size: clamp(1.8rem, 9vw, 2.6rem);
+      color: var(--parchment-strong);
+    }
+
+    .table-event {
+      font-size: 1.05rem;
+      color: var(--violet);
+    }
+
+    .table-timer-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 14px;
+      border-radius: var(--radius-lg);
+      background: rgba(var(--rgb-moon), 0.06);
+      border: 1px solid var(--line);
+    }
+
+    .table-timer {
+      font-family: var(--font-tale);
+      font-weight: 700;
+      font-size: clamp(3.6rem, 22vw, 6rem);
+      line-height: 1;
+      color: var(--moon);
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+
+    .table-timer.expired {
+      color: var(--wolf);
+    }
+
+    .table-timer-controls {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr 1fr;
+      gap: 8px;
+      width: 100%;
+      max-width: 360px;
+    }
+
+    .table-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .table-section-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--parchment);
+    }
+
+    .table-players {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 8px;
+    }
+
+    .table-player {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 48px;
+      padding: 6px 10px;
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      font-weight: 700;
+      min-width: 0;
+    }
+
+    .table-player-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .table-player.dead {
+      opacity: 0.45;
+      font-weight: 500;
+    }
+
+    .table-player-note {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--mist);
+    }
+
+    .table-vote {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .table-exit {
+      position: relative;
+      overflow: hidden;
+      margin-top: auto;
+      min-height: 54px;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+
+    .table-exit-fill {
+      position: absolute;
+      inset: 0;
+      width: 0;
+      background: rgba(var(--rgb-moon), 0.25);
+    }
+
+    .table-exit.holding .table-exit-fill {
+      width: 100%;
+      transition: width 0.9s linear;
+    }
+
+    .table-exit-label {
+      position: relative;
+    }
+
+    /* ---------- 1.7: partita senza Narratore ---------- */
+    #screenNarrator.mode-auto .narrator-tabs,
+    #screenNarrator.mode-auto #narratorPlayersPanel,
+    #screenNarrator.mode-auto .alive-counters,
+    #screenNarrator.mode-auto .guide-tip,
+    #screenNarrator.mode-auto .guide-note {
+      display: none !important;
+    }
+
+    .pass-cover {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 28px 8px;
+      text-align: center;
+    }
+
+    .pass-cover-name {
+      font-family: var(--font-tale);
+      font-weight: 700;
+      font-size: clamp(1.8rem, 9vw, 2.4rem);
+      color: var(--parchment-strong);
+      overflow-wrap: anywhere;
+    }
+
+    .pass-role {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: var(--ink-deep);
+      border: 1.5px solid var(--faction-color, var(--line-strong));
+    }
+
+    .pass-role > span:last-child {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .pass-role-icon {
+      font-size: 2rem;
+    }
+
+    .pass-yes-no {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
     }
   </style>
 </head>
@@ -2421,6 +2812,9 @@
       <div class="top-bar-actions">
         <button id="btnAntiAmnesiaTop" class="icon-btn" style="display: none;" onclick="openAntiAmnesiaSelector()" title="Mostra di nuovo il ruolo a un giocatore" aria-label="Mostra di nuovo il ruolo a un giocatore">
           👁️ <span class="btn-label">Ruoli</span>
+        </button>
+        <button id="btnTableTop" class="icon-btn" style="display: none;" onclick="openTableView()" title="Vista per il tavolo (senza ruoli)" aria-label="Vista per il tavolo">
+          🪑 <span class="btn-label">Tavolo</span>
         </button>
         <button id="btnUndoTop" class="icon-btn" style="display: none;" onclick="undoPhaseChange()" title="Torna alla fase precedente" aria-label="Torna alla fase precedente">
           ↩️ <span class="btn-label">Fase</span>
@@ -2466,12 +2860,20 @@
         </div>
       </div>
 
+      <!-- Le tre tappe della preparazione -->
+      <nav id="setupStepper" class="setup-stepper" aria-label="Tappe della preparazione">
+        <button class="setup-step" data-step="1" onclick="goSetupStep(1)"><span class="setup-step-num">1</span><span class="setup-step-label">Giocatori</span></button>
+        <button class="setup-step" data-step="2" onclick="goSetupStep(2)"><span class="setup-step-num">2</span><span class="setup-step-label">Mazzo</span></button>
+        <button class="setup-step" data-step="3" onclick="goSetupStep(3)"><span class="setup-step-num">3</span><span class="setup-step-label">Opzioni</span></button>
+      </nav>
+
+      <div id="setupPane1" class="setup-pane">
       <!-- Gestione Giocatori -->
       <div class="card">
         <div class="card-header">
           <div>
             <div class="card-title"><span>👥 Giocatori al tavolo (<span id="playerCountLabel">0</span>)</span></div>
-            <div class="card-subtitle">Escluso il Narratore • Minimo 5 giocatori</div>
+            <div class="card-subtitle">Chi riceve un ruolo • Minimo 5 giocatori</div>
           </div>
           <button class="btn btn-sm btn-danger" id="btnClearPlayers" onclick="confirmClearPlayers()" style="display:none;">
             Svuota
@@ -2490,7 +2892,77 @@
         <div id="playerChipsList" class="player-chips"></div>
       </div>
 
-      <!-- Opzioni Speciali & Editor Ruoli -->
+      </div>
+
+      <div id="setupPane2" class="setup-pane">
+      <!-- Selezione Ruoli (Tab Preset / Personalizza) -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🃏 Selezione Mazzo Ruoli</div>
+          <span id="deckMatchBadge" class="badge">0 / 0</span>
+        </div>
+
+        <div id="deckBalance" class="balance-meter" style="display: none;">
+          <div id="deckBalanceLabel" class="balance-label"></div>
+          <div class="balance-track" aria-hidden="true"><span id="deckBalanceMarker" class="balance-marker"></span></div>
+          <div class="balance-ends" aria-hidden="true"><span>🐺 Lupi</span><span>Villaggio 🏡</span></div>
+          <div id="deckBalanceHint" class="card-subtitle"></div>
+        </div>
+
+        <div class="tabs">
+          <button id="tabBtnPresets" class="tab-btn active" onclick="switchSetupTab('presets')">
+            ✨ Preset Consigliati
+          </button>
+          <button id="tabBtnCustom" class="tab-btn" onclick="switchSetupTab('custom')">
+            🎛️ Personalizza
+          </button>
+        </div>
+
+        <!-- Contenuto Tab A: Preset Consigliati -->
+        <div id="tabContentPresets">
+          <div id="presetsContainer" class="preset-list"></div>
+        </div>
+
+        <!-- Contenuto Tab B: Personalizza -->
+        <div id="tabContentCustom" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="card-subtitle">Componi il mazzo manualmente:</span>
+            <button class="btn btn-sm" onclick="clearCustomDeck()">Azzera mazzo</button>
+          </div>
+          <div id="customRoleSelectorList" class="role-selector-list"></div>
+        </div>
+      </div>
+
+      <div class="card setup-tools">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn" style="flex: 2;" onclick="openRoleEditorScreen()">
+            <span>🛠️ Gestisci i ruoli (<span id="totalRolesDbCount">18</span>)</span>
+          </button>
+          <button class="btn" style="flex: 1;" onclick="openGuideModal()">
+            📖 Guida
+          </button>
+        </div>
+      </div>
+
+      </div>
+
+      <div id="setupPane3" class="setup-pane">
+      <!-- Come giocate: con o senza Narratore -->
+      <div class="card">
+        <div class="card-title">🎭 Come giocate?</div>
+        <div class="mode-switch" role="group" aria-label="Come giocate">
+          <button class="mode-choice" data-mode="narrator" onclick="setPlayMode('narrator')">
+            <strong>📖 Con il Narratore</strong>
+            <span>Una persona guida la partita con il telefono e non riceve un ruolo.</span>
+          </button>
+          <button class="mode-choice" data-mode="auto" onclick="setPlayMode('auto')">
+            <strong>🤝 Senza Narratore</strong>
+            <span>Giocano tutti. Di notte il telefono passa di mano in mano e ognuno fa la sua mossa in segreto.</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Regole e varianti della partita -->
       <div class="card">
         <div class="switch-row">
           <div class="switch-info">
@@ -2503,7 +2975,7 @@
           </label>
         </div>
 
-        <div class="switch-row">
+        <div class="switch-row narrator-only">
           <div class="switch-info">
             <div class="switch-title">🤖 Morti e vittorie automatiche</div>
             <div class="switch-desc">All'alba l'app segna da sola chi muore e controlla chi ha vinto. Spento: lo fai tu.</div>
@@ -2563,14 +3035,6 @@
           </div>
         </details>
 
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button class="btn" style="flex: 2;" onclick="openRoleEditorScreen()">
-            <span>🛠️ Gestisci i ruoli (<span id="totalRolesDbCount">18</span>)</span>
-          </button>
-          <button class="btn" style="flex: 1;" onclick="openGuideModal()">
-            📖 Guida
-          </button>
-        </div>
       </div>
 
       <!-- Il Narratore: livello, voce e suoni -->
@@ -2579,7 +3043,7 @@
           <div class="card-title">🎙️ Il Narratore</div>
           <div class="card-subtitle">Valgono per tutte le partite.</div>
         </div>
-        <div class="level-switch" role="group" aria-label="Livello del Narratore">
+        <div class="level-switch narrator-only" role="group" aria-label="Livello del Narratore">
           <button class="level-choice" data-level="beginner" onclick="setNarratorLevel('beginner')"><strong>🎓 Principiante</strong><span>consigli a ogni passo</span></button>
           <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale</span></button>
         </div>
@@ -2605,54 +3069,18 @@
         </div>
       </div>
 
-      <!-- Selezione Ruoli (Tab Preset / Personalizza) -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">🃏 Selezione Mazzo Ruoli</div>
-          <span id="deckMatchBadge" class="badge">0 / 0</span>
-        </div>
-
-        <div id="deckBalance" class="balance-meter" style="display: none;">
-          <div id="deckBalanceLabel" class="balance-label"></div>
-          <div class="balance-track" aria-hidden="true"><span id="deckBalanceMarker" class="balance-marker"></span></div>
-          <div class="balance-ends" aria-hidden="true"><span>🐺 Lupi</span><span>Villaggio 🏡</span></div>
-          <div id="deckBalanceHint" class="card-subtitle"></div>
-        </div>
-
-        <div class="tabs">
-          <button id="tabBtnPresets" class="tab-btn active" onclick="switchSetupTab('presets')">
-            ✨ Preset Consigliati
-          </button>
-          <button id="tabBtnCustom" class="tab-btn" onclick="switchSetupTab('custom')">
-            🎛️ Personalizza
-          </button>
-        </div>
-
-        <!-- Contenuto Tab A: Preset Consigliati -->
-        <div id="tabContentPresets">
-          <div id="presetsContainer" class="preset-list"></div>
-        </div>
-
-        <!-- Contenuto Tab B: Personalizza -->
-        <div id="tabContentCustom" style="display: none;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span class="card-subtitle">Componi il mazzo manualmente:</span>
-            <button class="btn btn-sm" onclick="clearCustomDeck()">Azzera mazzo</button>
-          </div>
-          <div id="customRoleSelectorList" class="role-selector-list"></div>
-        </div>
       </div>
 
-      <!-- Barra Fissa in Basso per Avviare la Distribuzione -->
+      <!-- Barra fissa in basso: un solo pulsante per andare avanti -->
       <div class="bottom-sticky-bar">
         <div id="stickyDeckProblem" class="sticky-problem" style="display: none;"></div>
         <div class="bottom-sticky-inner">
-          <div style="display: flex; flex-direction: column;">
-            <span style="font-size: 0.78rem; color: var(--text-muted);">Mazzo / Giocatori</span>
-            <strong id="stickyDeckStatus" style="font-size: 1rem;">0 / 0 ruoli</strong>
+          <div class="sticky-status">
+            <span id="stickyStepLabel">Tappa 1 di 3</span>
+            <strong id="stickyDeckStatus">0 giocatori</strong>
           </div>
-          <button id="btnStartDistribution" class="btn btn-primary" style="flex: 1; max-width: 300px;" onclick="startDistributionPhase()" disabled>
-            🎲 Distribuisci Ruoli
+          <button id="btnSetupNext" class="btn btn-primary" style="flex: 1; max-width: 300px;" onclick="setupNext()" disabled>
+            Avanti →
           </button>
         </div>
       </div>
@@ -2897,7 +3325,7 @@
         </label>
       </div>
 
-      <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+      <div class="switch-row narrator-only" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
         <div class="switch-info">
           <div class="switch-title">🤖 Morti e vittorie automatiche</div>
           <div class="switch-desc">All'alba l'app segna da sola chi muore e controlla chi ha vinto. Spento: lo fai tu.</div>
@@ -2947,7 +3375,7 @@
       </div>
 
       <div class="card-title" style="font-size: 1.05rem;">🎙️ Il Narratore</div>
-      <div class="level-switch" role="group" aria-label="Livello del Narratore">
+      <div class="level-switch narrator-only" role="group" aria-label="Livello del Narratore">
         <button class="level-choice" data-level="beginner" onclick="setNarratorLevel('beginner')"><strong>🎓 Principiante</strong><span>consigli a ogni passo</span></button>
         <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale</span></button>
       </div>
@@ -3163,6 +3591,16 @@
         Per aggiornare: scarica il file, aprilo e tocca <strong>Aggiorna</strong>. La nuova versione si installa sopra quella vecchia e i dati restano.
       </p>
       <button class="btn" onclick="openWhatsNewModal('all')">📜 Novità delle ultime versioni</button>
+      <button class="btn" onclick="openWelcome()">👋 Come funziona Lupus</button>
+
+      <div class="info-share">
+        <div class="switch-title">💾 Backup</div>
+        <div class="card-subtitle">Salva in un file i tuoi ruoli, i giocatori e le impostazioni: se cambi telefono, li ritrovi tutti.</div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; width: 100%;">
+          <button class="btn" style="flex: 1;" onclick="saveBackup()">💾 Salva backup</button>
+          <button class="btn" style="flex: 1;" onclick="openRestoreModal()">📂 Ripristina</button>
+        </div>
+      </div>
 
       <div class="info-share">
         <div class="switch-title">📲 Dai Lupus ai tuoi amici</div>
@@ -3172,6 +3610,90 @@
       </div>
       <button class="btn" onclick="closeInfoModal()">Chiudi</button>
     </div>
+  </div>
+
+  <!-- ==========================================
+       BENVENUTO AL PRIMO AVVIO (3 schermate)
+  =========================================== -->
+  <div id="modalWelcome" class="modal-overlay">
+    <div class="modal-box welcome-box">
+      <div class="welcome-slide" data-slide="0">
+        <div class="welcome-art" aria-hidden="true">🐺🌙</div>
+        <div class="welcome-title">Benvenuto in Lupus</div>
+        <p>L'app che ti aiuta a giocare a Lupus in Fabula: distribuisce i ruoli, guida la notte passo passo e controlla chi vince.</p>
+        <p class="card-subtitle">Funziona anche senza internet: giocatori, ruoli e partita restano salvati sul telefono.</p>
+      </div>
+      <div class="welcome-slide" data-slide="1">
+        <div class="welcome-art" aria-hidden="true">👥🃏</div>
+        <div class="welcome-title">Prepari la partita in tre tappe</div>
+        <ol class="welcome-list">
+          <li><strong>Giocatori:</strong> scrivi i nomi di chi gioca.</li>
+          <li><strong>Mazzo:</strong> scegli un preset, sono già equilibrati.</li>
+          <li><strong>Opzioni:</strong> con o senza Narratore, varianti, voce. Poi tocca Distribuisci.</li>
+        </ol>
+      </div>
+      <div class="welcome-slide" data-slide="2">
+        <div class="welcome-art" aria-hidden="true">📱🤫</div>
+        <div class="welcome-title">Passa il telefono e gioca</div>
+        <p>Ognuno guarda il suo ruolo tenendo premuto il dito. Poi il Narratore segue la guida: legge la frase, tocca il giocatore indicato, Avanti.</p>
+        <p>Nessuno vuole fare il Narratore? Scegli <strong>Senza Narratore</strong>: di notte il telefono passa di mano in mano.</p>
+      </div>
+      <div class="welcome-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="welcome-actions">
+        <button id="btnWelcomeSkip" class="btn" onclick="closeWelcome()">Salta</button>
+        <button id="btnWelcomeNext" class="btn btn-primary" onclick="welcomeNext()">Avanti →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODALE: RIPRISTINA UN BACKUP
+  =========================================== -->
+  <div id="modalRestore" class="modal-overlay">
+    <div class="modal-box" style="max-width: 440px;">
+      <div class="card-header">
+        <div class="card-title">📂 Ripristina un backup</div>
+        <button class="icon-btn" onclick="closeRestoreModal()" aria-label="Chiudi">✖</button>
+      </div>
+      <p class="card-subtitle">Scegli il file di backup che avevi salvato (si chiama lupus-backup con la data), oppure incolla qui sotto il suo testo.</p>
+      <label class="btn btn-primary file-btn">
+        📁 Scegli il file
+        <input type="file" id="restoreFileInput" onchange="onRestoreFileChosen(this)">
+      </label>
+      <textarea id="restoreText" class="textarea-field" placeholder="...oppure incolla qui il testo del backup" oninput="previewRestore()"></textarea>
+      <div id="restorePreview" class="guide-result" style="display: none;"></div>
+      <button id="btnRestoreConfirm" class="btn btn-success" onclick="confirmRestore()" disabled>✅ Ripristina</button>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       VISTA PER IL TAVOLO (nessun ruolo, mai)
+  =========================================== -->
+  <div id="tableView" class="table-view" aria-hidden="true">
+    <div class="table-head">
+      <div id="tablePhase" class="table-phase">☀️ Giorno 1</div>
+      <div id="tableEvent" class="table-event"></div>
+    </div>
+    <div id="tableTimerBox" class="table-timer-box">
+      <div id="tableTimer" class="table-timer">03:00</div>
+      <div class="table-timer-controls">
+        <button class="btn" onclick="adjustDayTimer(-30)" aria-label="Togli 30 secondi">−30s</button>
+        <button id="tableTimerPlay" class="btn btn-primary" onclick="startPauseDayTimer()">▶️ Via</button>
+        <button class="btn" onclick="adjustDayTimer(30)" aria-label="Aggiungi 30 secondi">+30s</button>
+      </div>
+    </div>
+    <div id="tableVoteBox" class="table-section" style="display: none;">
+      <div class="table-section-title">🗳️ Votazione</div>
+      <div id="tableVote" class="table-vote"></div>
+    </div>
+    <div class="table-section">
+      <div class="table-section-title">👥 Vivi: <span id="tableAliveCount">0</span></div>
+      <div id="tablePlayers" class="table-players"></div>
+    </div>
+    <button id="btnTableExit" class="btn table-exit" onpointerdown="startTableExitHold(event)" onpointerup="cancelTableExitHold()" onpointerleave="cancelTableExitHold()" onpointercancel="cancelTableExitHold()">
+      <span class="table-exit-fill" aria-hidden="true"></span>
+      <span class="table-exit-label">✋ Tieni premuto per tornare al Narratore</span>
+    </button>
   </div>
 
   <!-- ==========================================

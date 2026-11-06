@@ -8,7 +8,7 @@ const code = readFileSync(new URL('../public/rules.js', import.meta.url), 'utf8'
 const ctx = vm.createContext({ TextEncoder, TextDecoder, btoa, atob });
 vm.runInContext(
   code +
-    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, TIE_RULE_KEYS, tieOutcome, roleRevealLine, deckAnnouncement, SURPRISE_EVENTS, findSurpriseEvent, eventEffects, drawSurpriseEvent, pickSurpriseEvent, splitPhrase, speechText, secondTargetKey, wolvesTargetIds, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
+    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, TIE_RULE_KEYS, tieOutcome, roleRevealLine, deckAnnouncement, SURPRISE_EVENTS, findSurpriseEvent, eventEffects, drawSurpriseEvent, pickSurpriseEvent, splitPhrase, speechText, secondTargetKey, wolvesTargetIds, ANY_WOLF_VICTIM, pickFromVotes, passOrder, backupFileName, buildBackup, parseBackup, sanitizeBackupSettings, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
   ctx
 );
 const R = ctx.R;
@@ -642,4 +642,58 @@ test('voce: frase divisa in chiamata e chiusura, testo pulito', () => {
 test('cronologia: evento a sorpresa della notte', () => {
   const tl = R.buildTimeline([player('a', 'lupo'), player('c', 'contadino')], [{ turn: 2, eventId: 'luna_rossa', entries: [] }], findRole);
   assert.match(tl[0].lines[0], /🌕 Evento a sorpresa: Luna rossa/);
+});
+
+// ---------- 1.7: partita senza Narratore e backup ----------
+test('senza Narratore: scelta del branco dai voti segreti', () => {
+  assert.deepEqual([...R.pickFromVotes([['c'], ['d'], ['d']], 1)], ['d']);
+  // parità: vince chi è stato scelto per primo
+  assert.deepEqual([...R.pickFromVotes([['c'], ['d']], 1)], ['c']);
+  // "nessuno" non conta
+  assert.deepEqual([...R.pickFromVotes([[''], ['e']], 1)], ['e']);
+  assert.deepEqual([...R.pickFromVotes([[''], ['']], 1)], []);
+  // Luna rossa: due vittime
+  assert.deepEqual([...R.pickFromVotes([['c', 'd'], ['d', 'e']], 2)], ['d', 'c']);
+  assert.deepEqual([...R.passOrder([player('a', 'lupo'), player('b', 'contadino', { isDead: true }), player('c', 'veggente')])], ['a', 'c']);
+});
+
+test('Strega senza Narratore: salva la vittima dei lupi, chiunque sia', () => {
+  const players = [player('a', 'lupo'), player('s', 'strega'), player('c', 'contadino'), player('d', 'contadino'), player('e', 'contadino')];
+  const steps = plan(players, 1);
+  const save = R.witchSaveKey('role:strega');
+  const res = R.resolveNight(players, steps, { wolves: 'c', [save]: R.ANY_WOLF_VICTIM }, roles());
+  assert.equal(res.deaths.length, 0);
+  assert.deepEqual([...res.saved].map(x => x.playerId), ['c']);
+  assert.deepEqual([...R.computePowerUsage(players, steps, { wolves: 'c', [save]: R.ANY_WOLF_VICTIM }, roles())].map(u => u.slot), ['witch-save']);
+  // senza vittima (Eclissi) la pozione non si consuma
+  const eclipse = [...R.buildNightPlan(players, roles(), 1, {}, R.eventEffects(R.findSurpriseEvent('eclissi')))];
+  assert.equal(R.computePowerUsage(players, eclipse, { wolves: 'c', [save]: R.ANY_WOLF_VICTIM }, roles()).length, 0);
+});
+
+test('backup: andata e ritorno, dati ripuliti', () => {
+  const state = {
+    roles: R.DEFAULT_ROLES.map(r => ({ ...r })).concat([{ id: 'custom_1', name: 'Mugnaio', icon: '🌾', faction: 'Villaggio', whatYouDo: 'Macina.', howYouWin: 'Col villaggio.', wakeTiming: 'mai', priority: 10 }]),
+    players: ['Anna', ' Bruno ', ''],
+    settings: { ghostRule: false, tieRule: 'decider', narratorLevel: 'expert', playMode: 'auto', selectedDeck: { lupo: 2, contadino: 3, 'x y': 1 }, dayTimerSeconds: 240, segreto: 'no', voiceOn: 'sì' },
+    knownPlayers: [{ name: 'Anna', count: 3, last: 5 }, { name: '' }]
+  };
+  const file = R.buildBackup(state, '2026-11-07T10:00:00.000Z', '1.7.0');
+  const back = R.parseBackup(JSON.stringify(file));
+  assert.equal(back.error, undefined);
+  assert.equal(back.data.roles.length, 19);
+  assert.equal(back.data.roles.find(r => r.id === 'strega').nightAction, 'witch');
+  assert.equal(back.data.roles.find(r => r.id === 'custom_1').name, 'Mugnaio');
+  assert.deepEqual([...back.data.players], ['Anna', 'Bruno']);
+  assert.equal(back.data.settings.ghostRule, false);
+  assert.equal(back.data.settings.tieRule, 'decider');
+  assert.equal(back.data.settings.playMode, 'auto');
+  assert.deepEqual({ ...back.data.settings.selectedDeck }, { lupo: 2, contadino: 3 });
+  assert.equal('segreto' in back.data.settings, false);
+  assert.equal('voiceOn' in back.data.settings, false);
+  assert.equal(back.data.knownPlayers.length, 1);
+  assert.equal(R.backupFileName(new Date(2026, 10, 7)), 'lupus-backup-2026-11-07.json');
+  assert.match(R.parseBackup('ciao').error, /non è un file di backup/);
+  assert.match(R.parseBackup('{"format":"altro"}').error, /non è un file di backup/);
+  assert.match(R.parseBackup(JSON.stringify({ ...file, version: 99 })).error, /versione più nuova/);
+  assert.match(R.parseBackup(JSON.stringify({ ...file, data: { roles: [] } })).error, /ruoli validi/);
 });

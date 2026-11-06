@@ -1011,6 +1011,16 @@ function witchSaveKey(stepKey) {
   return `${stepKey}#save`;
 }
 
+// Pozione della vita "sulla vittima dei lupi, chiunque sia" (partite senza Narratore:
+// la Strega può fare la sua mossa prima che i lupi abbiano scelto)
+const ANY_WOLF_VICTIM = '*';
+
+/** Chi salva la pozione della vita: la vittima indicata, se è una vittima dei lupi (con '*' la prima). */
+function witchSavedId(saveChoice, wolvesIds) {
+  if (saveChoice === ANY_WOLF_VICTIM) return wolvesIds[0] || null;
+  return wolvesIds.includes(saveChoice) ? saveChoice : null;
+}
+
 /** Chiave della seconda vittima (quando un passo ha due bersagli, es. Luna rossa). */
 function secondTargetKey(stepKey) {
   return `${stepKey}#2`;
@@ -1060,8 +1070,8 @@ function resolveNight(players, steps, choices, roles) {
   // Prima le protezioni (Guardia, pozione della vita), poi i colpi
   active.forEach(st => {
     if (st.kind === 'protect' && byId(ch[st.key])) protectedIds.add(ch[st.key]);
-    const saveId = ch[witchSaveKey(st.key)];
-    if (st.kind === 'witch' && !st.saveUsed && wolvesTargets.some(t => t.id === saveId)) {
+    const saveId = witchSavedId(ch[witchSaveKey(st.key)], wolvesTargets.map(t => t.id));
+    if (st.kind === 'witch' && !st.saveUsed && saveId) {
       savedFromWolves.add(saveId);
       result.entries.push({ kind: 'witch-save', roleIds: st.roleIds.slice(), targetId: saveId });
     }
@@ -1110,7 +1120,7 @@ function computePowerUsage(players, steps, choices, roles) {
   active.forEach(st => {
     const add = slot => st.aliveHolders.forEach(h => usage.push({ playerId: h.id, slot }));
     if (st.kind === 'witch') {
-      if (!st.saveUsed && wolvesIds.includes(ch[witchSaveKey(st.key)])) add('witch-save');
+      if (!st.saveUsed && witchSavedId(ch[witchSaveKey(st.key)], wolvesIds)) add('witch-save');
       if (!st.killUsed && ch[st.key] && list.some(p => p.id === ch[st.key])) add('witch-kill');
     } else if (mergedStepRules(st, findRole).oncePerGame && ch[st.key]) {
       add('power');
@@ -1334,7 +1344,123 @@ function speechText(text) {
 }
 
 /* =========================================================================
-   10. GIOCATORI: COLORE, INIZIALE E NOMI GIÀ USATI (FUNZIONI PURE)
+   10. PARTITA SENZA NARRATORE E BACKUP
+========================================================================= */
+/**
+ * Scelta finale di un gruppo (es. il branco) dalle mosse segrete dei suoi membri.
+ * votes = liste di scelte nell'ordine in cui hanno votato ('' = nessuno), targets = quante persone scegliere.
+ * Vince chi ha più voti; a parità, chi è stato scelto per primo.
+ */
+function pickFromVotes(votes, targets) {
+  const count = new Map();
+  const firstSeen = new Map();
+  let position = 0;
+  (votes || []).forEach(list => {
+    (Array.isArray(list) ? list : [list]).forEach(id => {
+      if (!id) return;
+      count.set(id, (count.get(id) || 0) + 1);
+      if (!firstSeen.has(id)) firstSeen.set(id, position++);
+    });
+  });
+  return Array.from(count.keys())
+    .sort((a, b) => count.get(b) - count.get(a) || firstSeen.get(a) - firstSeen.get(b))
+    .slice(0, Math.max(1, targets || 1));
+}
+
+/** Ordine in cui passa il telefono di notte: i vivi, nell'ordine in cui sono seduti. */
+function passOrder(players) {
+  return (players || []).filter(p => !p.isDead).map(p => p.id);
+}
+
+/* ---------- Backup ---------- */
+const BACKUP_FORMAT = 'lupus-backup';
+const BACKUP_VERSION = 1;
+const BACKUP_BOOL_SETTINGS = ['ghostRule', 'autoResolve', 'enforceRules', 'revealDead', 'deckAnnounced', 'surpriseEvents', 'voiceOn', 'soundsOn'];
+
+/** Nome del file di backup, es. lupus-backup-2026-11-07.json */
+function backupFileName(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  const pad = n => String(n).padStart(2, '0');
+  return `lupus-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+}
+
+/** Contenuto del backup: ruoli, giocatori, impostazioni e nomi già usati (non la partita in corso). */
+function buildBackup(state, nowIso, appVersion) {
+  return {
+    format: BACKUP_FORMAT,
+    version: BACKUP_VERSION,
+    appVersion: appVersion || '',
+    createdAt: nowIso,
+    data: {
+      roles: state.roles || [],
+      players: state.players || [],
+      settings: state.settings || {},
+      knownPlayers: state.knownPlayers || []
+    }
+  };
+}
+
+/** Impostazioni del backup ripulite: solo quelle conosciute e con valori validi. */
+function sanitizeBackupSettings(obj) {
+  const src = obj && typeof obj === 'object' ? obj : {};
+  const out = {};
+  BACKUP_BOOL_SETTINGS.forEach(k => { if (typeof src[k] === 'boolean') out[k] = src[k]; });
+  if (TIE_RULE_KEYS.includes(src.tieRule)) out.tieRule = src.tieRule;
+  if (src.narratorLevel === 'beginner' || src.narratorLevel === 'expert') out.narratorLevel = src.narratorLevel;
+  if (src.playMode === 'narrator' || src.playMode === 'auto') out.playMode = src.playMode;
+  if (src.activeSetupTab === 'presets' || src.activeSetupTab === 'custom') out.activeSetupTab = src.activeSetupTab;
+  const seconds = Number(src.dayTimerSeconds);
+  if (seconds >= 30 && seconds <= 1200) out.dayTimerSeconds = Math.round(seconds);
+  if (src.selectedDeck && typeof src.selectedDeck === 'object') {
+    out.selectedDeck = {};
+    Object.entries(src.selectedDeck).forEach(([id, qty]) => {
+      const n = parseInt(qty, 10);
+      if (/^[a-z0-9_]{1,40}$/i.test(id) && n > 0 && n <= 30) out.selectedDeck[id] = n;
+    });
+  }
+  if (Array.isArray(src.knownDefaultRoleIds)) out.knownDefaultRoleIds = src.knownDefaultRoleIds.filter(id => typeof id === 'string').slice(0, 100);
+  return out;
+}
+
+/**
+ * Legge un backup (testo del file). Restituisce { data, createdAt } oppure { error }.
+ * data = { roles, players, settings, knownPlayers }, già controllati.
+ */
+function parseBackup(text) {
+  let obj;
+  try {
+    obj = JSON.parse(String(text || '').trim());
+  } catch (e) {
+    return { error: 'Questo non è un file di backup di Lupus (o è rovinato).' };
+  }
+  if (!obj || obj.format !== BACKUP_FORMAT || !obj.data || typeof obj.data !== 'object') {
+    return { error: 'Questo non è un file di backup di Lupus.' };
+  }
+  if (Number(obj.version) > BACKUP_VERSION) {
+    return { error: 'Il backup è stato fatto con una versione più nuova di Lupus: aggiorna l\'app e riprova.' };
+  }
+  const ids = new Set();
+  const roles = (Array.isArray(obj.data.roles) ? obj.data.roles : []).map(r => {
+    const clean = sanitizeImportedRole(r);
+    if (!clean || !clean.id || ids.has(clean.id)) return null;
+    ids.add(clean.id);
+    return clean;
+  }).filter(Boolean).slice(0, 100);
+  if (!roles.length) return { error: 'Il backup non contiene ruoli validi.' };
+  const players = (Array.isArray(obj.data.players) ? obj.data.players : [])
+    .map(n => cleanText(n, 40)).filter(Boolean).slice(0, 40);
+  const knownPlayers = (Array.isArray(obj.data.knownPlayers) ? obj.data.knownPlayers : [])
+    .filter(k => k && typeof k.name === 'string' && k.name.trim())
+    .map(k => ({ name: cleanText(k.name, 40), count: Math.max(1, parseInt(k.count, 10) || 1), last: Number(k.last) || 0 }))
+    .slice(0, 60);
+  return {
+    createdAt: typeof obj.createdAt === 'string' ? obj.createdAt : '',
+    data: { roles, players, settings: sanitizeBackupSettings(obj.data.settings), knownPlayers }
+  };
+}
+
+/* =========================================================================
+   11. GIOCATORI: COLORE, INIZIALE E NOMI GIÀ USATI (FUNZIONI PURE)
 ========================================================================= */
 // Colori dei giocatori: tenui, ben distinti tra loro e leggibili con il testo scuro sopra
 const PLAYER_COLORS = [

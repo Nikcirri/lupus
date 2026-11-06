@@ -31,6 +31,7 @@ let appSettings = {
   deckAnnounced: false,    // all'inizio si annunciano i ruoli in gioco
   surpriseEvents: false,   // eventi a sorpresa nelle notti
   // Preferenze del Narratore (valgono per tutte le partite)
+  playMode: 'narrator',      // 'narrator' (c'è un Narratore) | 'auto' (senza Narratore: il telefono passa di mano in mano)
   narratorLevel: 'beginner', // 'beginner' (consigli a ogni passo) | 'expert' (solo l'essenziale)
   voiceOn: false,            // il telefono legge le frasi ad alta voce
   soundsOn: true             // ululato, gallo, campanella...
@@ -84,6 +85,7 @@ window.addEventListener('DOMContentLoaded', () => {
   requestScreenWakeLock();
   renderUpdateBanner();
   checkWhatsNew(isFirstRun);
+  if (isFirstRun) openWelcome();
   setTimeout(autoCheckForUpdates, 1500);
 });
 
@@ -101,6 +103,9 @@ window.handleAndroidBack = function handleAndroidBack() {
   const isOpen = id => document.getElementById(id).classList.contains('active');
 
   if (isOpen('modalConfirm')) { closeConfirmModal(); return true; }
+  if (isOpen('modalWelcome')) { closeWelcome(); return true; }
+  if (isTableViewOpen()) { showToast('✋ Per tornare al Narratore tieni premuto il pulsante in basso.'); return true; }
+  if (isOpen('modalRestore')) { closeRestoreModal(); return true; }
   if (isOpen('modalDeathCause')) { closeDeathCauseModal(); return true; }
   if (isOpen('modalVote')) { closeVoteModal(); return true; }
   if (isOpen('modalSummary')) { closeSummaryModal(); return true; }
@@ -127,6 +132,12 @@ window.handleAndroidBack = function handleAndroidBack() {
 
   if (isOpen('screenNarrator')) {
     confirmLeaveApp();
+    return true;
+  }
+
+  // Preparazione: Indietro torna alla tappa precedente
+  if (isOpen('screenSetup') && setupStep > 1) {
+    goSetupStep(setupStep - 1);
     return true;
   }
 
@@ -231,6 +242,7 @@ function migrateMatch(match) {
   if (!TIE_RULE_KEYS.includes(match.tieRule)) match.tieRule = 'runoff';
   ['revealDead', 'deckAnnounced', 'surpriseEvents'].forEach(k => { if (typeof match[k] !== 'boolean') match[k] = false; });
   if (match.event && !findSurpriseEvent(match.event.id)) match.event = null;
+  if (match.mode !== 'auto') match.mode = 'narrator';
 }
 
 // Partite salvate con le versioni 1.0-1.2: i segnalini diventano le scelte della modalità guidata.
@@ -418,6 +430,8 @@ function showScreen(screenId) {
   document.getElementById('btnAntiAmnesiaTop').style.display = isNarrator ? 'inline-flex' : 'none';
   document.getElementById('btnSettingsTop').style.display = isNarrator ? 'inline-flex' : 'none';
   document.getElementById('btnUndoTop').style.display = isNarrator ? 'inline-flex' : 'none';
+  document.getElementById('btnTableTop').style.display = isNarrator ? 'inline-flex' : 'none';
+  if (!isNarrator && isTableViewOpen()) closeTableView();
   document.getElementById('headerIcon').style.display = isNarrator ? 'none' : 'inline';
   document.getElementById('btnInfoTop').style.display = (screenId === 'screenSetup') ? 'inline-flex' : 'none';
   if (screenId !== 'screenNarrator') document.getElementById('headerTitle').textContent = 'Lupus';
@@ -450,6 +464,7 @@ function renderSetupScreen() {
 
   renderPlayerChips();
   renderSetupTabs();
+  syncPlayModeUI();
   updateSetupDeckCounters();
 }
 
@@ -855,34 +870,143 @@ function updateSetupDeckCounters() {
   const deckTotal = getSelectedDeckTotal();
 
   const badge = document.getElementById('deckMatchBadge');
-  const stickyStatus = document.getElementById('stickyDeckStatus');
-  const btnStart = document.getElementById('btnStartDistribution');
-
   badge.textContent = `${deckTotal} / ${playerCount} ruoli`;
-  stickyStatus.textContent = `${deckTotal} / ${playerCount} ruoli`;
 
   // Motivi per cui non si può ancora distribuire (vedi getDeckProblems in rules.js)
-  const problems = getDeckProblems(appSettings.selectedDeck, playerCount, findRoleOrNull);
-  const isValid = problems.length === 0;
-  btnStart.disabled = !isValid;
-
-  const problemEl = document.getElementById('stickyDeckProblem');
-  problemEl.textContent = problems[0] || '';
-  problemEl.style.display = problems.length ? 'block' : 'none';
+  const isValid = getDeckProblems(appSettings.selectedDeck, playerCount, findRoleOrNull).length === 0;
+  badge.className = playerCount < 5 ? 'badge' : isValid ? 'badge badge-villaggio' : 'badge badge-alleato';
 
   renderDeckBalance(deckTotal);
+  renderSetupStepper();
+}
 
-  if (playerCount < 5) {
-    stickyStatus.style.color = 'var(--text-muted)';
-    stickyStatus.textContent = `Giocatori: ${playerCount}/5`;
-    badge.className = 'badge';
-  } else if (isValid) {
-    stickyStatus.style.color = 'var(--accent-success)';
-    badge.className = 'badge badge-villaggio';
-  } else {
-    stickyStatus.style.color = 'var(--accent-warning)';
-    badge.className = 'badge badge-alleato';
+/* ---------- Le tre tappe della preparazione: Giocatori → Mazzo → Opzioni ---------- */
+let setupStep = 1;
+const SETUP_STEP_COUNT = 3;
+
+// Cosa manca per finire una tappa ('' = tutto a posto)
+function setupStepProblem(step) {
+  if (setupPlayers.length < 5) return `Servono almeno 5 giocatori (ora ${setupPlayers.length}).`;
+  if (step >= 2) {
+    const problems = getDeckProblems(appSettings.selectedDeck, setupPlayers.length, findRoleOrNull);
+    if (problems.length) return problems[0];
   }
+  return '';
+}
+
+function canReachSetupStep(step) {
+  return step <= 1 || !setupStepProblem(step - 1);
+}
+
+function goSetupStep(step) {
+  const target = Math.max(1, Math.min(SETUP_STEP_COUNT, step));
+  if (!canReachSetupStep(target)) {
+    showToast(setupStepProblem(target - 1), 'warn');
+    return;
+  }
+  vibrate('tap');
+  setupStep = target;
+  renderSetupStepper();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function setupNext() {
+  const problem = setupStepProblem(setupStep);
+  if (problem) {
+    showToast(problem, 'warn');
+    return;
+  }
+  if (setupStep < SETUP_STEP_COUNT) goSetupStep(setupStep + 1);
+  else startDistributionPhase();
+}
+
+function renderSetupStepper() {
+  while (setupStep > 1 && !canReachSetupStep(setupStep)) setupStep--;
+  for (let i = 1; i <= SETUP_STEP_COUNT; i++) {
+    document.getElementById(`setupPane${i}`).style.display = i === setupStep ? 'flex' : 'none';
+  }
+  document.querySelectorAll('#setupStepper .setup-step').forEach(btn => {
+    const step = Number(btn.dataset.step);
+    btn.classList.toggle('current', step === setupStep);
+    btn.classList.toggle('done', step < setupStep);
+    btn.disabled = step !== setupStep && !canReachSetupStep(step);
+    if (step === setupStep) btn.setAttribute('aria-current', 'step');
+    else btn.removeAttribute('aria-current');
+  });
+
+  const playerCount = setupPlayers.length;
+  const problem = setupStepProblem(setupStep);
+  const labels = ['Avanti: il mazzo →', 'Avanti: le opzioni →', '🎲 Distribuisci i ruoli'];
+  const status = [
+    `👥 ${playerCount} ${playerCount === 1 ? 'giocatore' : 'giocatori'}`,
+    `🃏 ${getSelectedDeckTotal()} / ${playerCount} ruoli`,
+    isAutoPlayMode() ? '🤝 Senza Narratore' : '📖 Con il Narratore'
+  ];
+  document.getElementById('stickyStepLabel').textContent = `Tappa ${setupStep} di ${SETUP_STEP_COUNT}`;
+  const statusEl = document.getElementById('stickyDeckStatus');
+  statusEl.textContent = status[setupStep - 1];
+  statusEl.style.color = problem ? 'var(--accent-warning)' : 'var(--accent-success)';
+  const next = document.getElementById('btnSetupNext');
+  next.textContent = labels[setupStep - 1];
+  next.disabled = !!problem;
+  const problemEl = document.getElementById('stickyDeckProblem');
+  problemEl.textContent = problem;
+  problemEl.style.display = problem ? 'block' : 'none';
+}
+
+/* ---------- Con o senza Narratore ---------- */
+function isAutoPlayMode() {
+  return appSettings.playMode === 'auto';
+}
+
+function setPlayMode(mode) {
+  appSettings.playMode = mode === 'auto' ? 'auto' : 'narrator';
+  saveSettingsToStorage();
+  vibrate('tap');
+  syncPlayModeUI();
+  renderSetupStepper();
+}
+
+function syncPlayModeUI() {
+  const auto = isAutoPlayMode();
+  document.querySelectorAll('.mode-choice').forEach(btn => {
+    const active = btn.dataset.mode === (auto ? 'auto' : 'narrator');
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  document.getElementById('setupPane3').classList.toggle('play-auto', auto);
+}
+
+/* ---------- Benvenuto al primo avvio ---------- */
+let welcomeSlide = 0;
+
+function openWelcome() {
+  closeInfoModal();
+  welcomeSlide = 0;
+  renderWelcome();
+  document.getElementById('modalWelcome').classList.add('active');
+}
+
+function renderWelcome() {
+  document.querySelectorAll('#modalWelcome .welcome-slide').forEach((el, i) => { el.style.display = i === welcomeSlide ? 'flex' : 'none'; });
+  document.querySelectorAll('#modalWelcome .welcome-dots span').forEach((el, i) => el.classList.toggle('active', i === welcomeSlide));
+  const last = welcomeSlide === 2;
+  document.getElementById('btnWelcomeNext').textContent = last ? 'Iniziamo! 🐺' : 'Avanti →';
+  document.getElementById('btnWelcomeSkip').style.visibility = last ? 'hidden' : 'visible';
+}
+
+function welcomeNext() {
+  vibrate('tap');
+  if (welcomeSlide >= 2) {
+    closeWelcome();
+    return;
+  }
+  welcomeSlide++;
+  renderWelcome();
+}
+
+function closeWelcome() {
+  document.getElementById('modalWelcome').classList.remove('active');
 }
 
 // Equilibrio del mazzo: bilancia tra lupi (sinistra) e villaggio (destra), con un consiglio
@@ -1315,8 +1439,10 @@ function startDistributionPhase() {
     turn: 1,
     phase: 'night', // 'night' | 'day'
     ghostRule: appSettings.ghostRule !== false,
-    autoResolve: appSettings.autoResolve !== false,
+    autoResolve: isAutoPlayMode() || appSettings.autoResolve !== false,
     enforceRules: appSettings.enforceRules !== false,
+    mode: isAutoPlayMode() ? 'auto' : 'narrator', // senza Narratore: il telefono passa di mano in mano
+    pass: null,             // notte senza Narratore: a chi tocca e mosse segrete
     tieRule: TIE_RULE_KEYS.includes(appSettings.tieRule) ? appSettings.tieRule : 'runoff',
     revealDead: getSetupOption('revealDead'),
     deckAnnounced: getSetupOption('deckAnnounced'),
@@ -1445,11 +1571,16 @@ function renderNarratorDashboard() {
   // Controllo Banner Vittoria
   renderVictoryBanner();
 
+  // Senza Narratore: niente scheda Giocatori né contatori (svelerebbero i ruoli)
+  document.getElementById('screenNarrator').classList.toggle('mode-auto', isAutoMatch());
+  document.getElementById('modalGameMenu').classList.toggle('play-auto', isAutoMatch());
+
   // Modalità guidata (passo attuale) e scheda Giocatori per le correzioni
   renderNarratorGuide();
   renderNarratorPlayersList();
   document.getElementById('narratorPlayersCount').textContent = activeMatch.players.length;
   applyNarratorTab();
+  renderTableView();
 }
 
 function getAliveCounts() {
@@ -1469,7 +1600,7 @@ function getAliveCounts() {
 }
 
 function evaluateVictoryCondition() {
-  if (!activeMatch || activeMatch.autoResolve === false) return null;
+  if (!activeMatch || !isAutoResolve()) return null;
   // Prima si risolvono i colpi di chi muore (es. il Cacciatore), poi si controlla la vittoria.
   if ((activeMatch.pendingDeathActions || []).length) return null;
   // Regole in rules.js: vittorie solitarie (rogo, ultimo vivo, sopravvissuto), lupi finiti, parità dei lupi.
@@ -1547,7 +1678,7 @@ let narratorTab = 'guide';
 let emptyCallTimer = null; // { key, endsAt, interval, done }
 
 function isAutoResolve() {
-  return !!activeMatch && activeMatch.autoResolve !== false;
+  return !!activeMatch && (activeMatch.autoResolve !== false || activeMatch.mode === 'auto');
 }
 
 function isRulesEnforced() {
@@ -1625,6 +1756,7 @@ function switchNarratorTab(tab) {
 }
 
 function applyNarratorTab() {
+  if (isAutoMatch()) narratorTab = 'guide';
   const isGuide = narratorTab === 'guide';
   document.getElementById('narratorGuidePanel').style.display = isGuide ? 'flex' : 'none';
   document.getElementById('guideBottomBar').style.display = isGuide ? 'block' : 'none';
@@ -1634,6 +1766,10 @@ function applyNarratorTab() {
 }
 
 function renderNarratorGuide() {
+  if (isAutoMatch() && activeMatch.phase === 'night') {
+    renderPassNight();
+    return;
+  }
   const plan = getGuidePlan();
   const idx = getGuideIndex(plan);
   const step = plan[idx];
@@ -1738,6 +1874,11 @@ function currentDayEvent() {
 function currentNightEffects() {
   const ev = currentRoundEvent();
   return eventEffects(ev && ev.phase === 'night' ? ev : null);
+}
+
+// Testo dell'evento detto di giorno: "Domani..." diventa "Oggi..."
+function eventTextToday(ev) {
+  return ev.text.replace(/^Domattina/, 'Stamattina').replace(/^Domani/, 'Oggi');
 }
 
 function dayEventIs(effect) {
@@ -2125,13 +2266,13 @@ function renderMorningStep() {
   }
 
   const ev = currentDayEvent();
-  if (ev) html += `<div class="event-card"><div class="event-title">${escapeHtml(ev.icon)} ${escapeHtml(ev.name)}</div><div>${escapeHtml(ev.text.replace(/^Domani|^Domattina/, m => (m === 'Domani' ? 'Oggi' : 'Stamattina')))}</div></div>`;
+  if (ev) html += `<div class="event-card"><div class="event-title">${escapeHtml(ev.icon)} ${escapeHtml(ev.name)}</div><div>${escapeHtml(eventTextToday(ev))}</div></div>`;
   html += phraseHtml(getMorningLines().map(escapeHtml).join('<br><br>'));
   html += `<div class="guide-muted guide-help">${revealsNightDeaths() ? 'Leggi anche il ruolo dei morti.' : 'Annuncia i morti senza svelare il loro ruolo.'}</div>`;
 
   const ghost = activeMatch.players.find(p => p.isGhost && p.diedOnTurn === turn);
   if (ghost) html += `<div class="guide-info">👻 <strong>${escapeHtml(ghost.name)}</strong> è il Fantasma: da ora resta in silenzio, ma vota al rogo.</div>`;
-  if (last && last.copies.length) {
+  if (last && last.copies.length && !isAutoMatch()) {
     html += `<div class="guide-note">🎭 Solo per te: ${last.copies.map(c => {
       const nr = c.newRoleId ? getRoleById(c.newRoleId) : null;
       return `${escapeHtml(nameOf(c.playerId))} ora è ${nr ? `${escapeHtml(nr.icon)} ${escapeHtml(nr.name)}` : 'senza ruolo nuovo'}`;
@@ -2146,6 +2287,7 @@ function renderDebateStep() {
   return `
     ${phraseHtml(escapeHtml(DEBATE_PHRASE))}
     ${dayEventIs('shortDebate') ? '<div class="guide-info">⚡ Processo lampo: oggi il dibattito dura la metà.</div>' : ''}
+    <button class="btn" onclick="openTableView()">🪑 Mostra al tavolo (timer e vivi, senza ruoli)</button>
     <div class="timer-box">
       <div>
         <div id="dayTimerDisplay" class="timer-display ${dayTimerSeconds === 0 ? 'expired' : ''}">${formatTimer(dayTimerSeconds)}</div>
@@ -2158,8 +2300,8 @@ function renderDebateStep() {
       </div>
     </div>
     <div class="guide-info">
-      👻 Fantasma: ${ghosts.length ? `<strong>${escapeHtml(ghosts.join(', '))}</strong> (zitto, ma vota)` : 'nessuno'}<br>
-      🎖️ Voto doppio: ${mayors.length ? `<strong>${escapeHtml(mayors.join(', '))}</strong>` : 'nessuno'}
+      👻 Fantasma: ${ghosts.length ? `<strong>${escapeHtml(ghosts.join(', '))}</strong> (zitto, ma vota)` : 'nessuno'}
+      ${isAutoMatch() ? '' : `<br>🎖️ Voto doppio: ${mayors.length ? `<strong>${escapeHtml(mayors.join(', '))}</strong>` : 'nessuno'}`}
     </div>
     ${guideTip('debate')}
   `;
@@ -2182,7 +2324,7 @@ function renderVoteStep() {
     return `
       <div class="guide-result result-danger">🔥 Oggi il villaggio ha bruciato <strong>${escapeHtml(burned.name)}</strong> (${escapeHtml(role.icon)} ${escapeHtml(role.name)}).</div>
       ${phraseHtml(getVotePhrases().map(escapeHtml).join('<br><br>'))}
-      <div class="guide-muted guide-help">Se hai sbagliato, nella scheda 👥 Giocatori tocca ❌ per riportarlo in vita.</div>
+      <div class="guide-muted guide-help">${isAutoMatch() ? 'Se avete sbagliato, toccate ↩️ in alto per tornare indietro.' : 'Se hai sbagliato, nella scheda 👥 Giocatori tocca ❌ per riportarlo in vita.'}</div>
     `;
   }
   if (dayEventIs('noBurning')) {
@@ -2335,6 +2477,353 @@ function markNightDeath(playerId) {
 }
 
 /* =========================================================================
+   PARTITA SENZA NARRATORE
+   Di notte il telefono passa a tutti i vivi, uno alla volta (nell'ordine in cui sono seduti).
+   Chi lo riceve fa la sua mossa in segreto; chi non ha niente da fare tocca un nome a caso,
+   così dal tempo passato col telefono nessuno capisce chi ha poteri.
+   Le mosse stanno in activeMatch.pass.votes; all'alba diventano activeMatch.nightChoices.
+========================================================================= */
+const AUTO_NIGHTFALL_PHRASE = '«Cala la notte: il telefono passerà a tutti, uno alla volta. Chi non ce l\'ha chiude gli occhi.»';
+const AUTO_DONE_PHRASE = '«Tutti hanno fatto la loro mossa. Appoggiate il telefono al centro: il villaggio si sveglia!»';
+
+function isAutoMatch() {
+  return !!activeMatch && activeMatch.mode === 'auto';
+}
+
+function ensurePass() {
+  if (!activeMatch.pass || activeMatch.pass.turn !== activeMatch.turn) {
+    activeMatch.pass = { turn: activeMatch.turn, order: passOrder(activeMatch.players), index: 0, stage: 'intro', votes: {}, decoy: {} };
+  }
+  const pass = activeMatch.pass;
+  // chi è morto nel frattempo non riceve il telefono
+  while ((pass.stage === 'cover' || pass.stage === 'action') && pass.index < pass.order.length) {
+    const p = activeMatch.players.find(x => x.id === pass.order[pass.index]);
+    if (p && !p.isDead) break;
+    pass.index++;
+  }
+  if ((pass.stage === 'cover' || pass.stage === 'action') && pass.index >= pass.order.length) pass.stage = 'done';
+  return pass;
+}
+
+function passPlayer(pass) {
+  return activeMatch.players.find(p => p.id === pass.order[pass.index]) || null;
+}
+
+function passNarrationKey(pass) {
+  return `pass|${activeMatch.turn}|${pass.stage}|${pass.index}`;
+}
+
+function getPassVote(key, playerId) {
+  const byPlayer = (activeMatch.pass.votes || {})[key] || {};
+  return Array.isArray(byPlayer[playerId]) ? byPlayer[playerId] : null;
+}
+
+function setPassVote(key, playerId, list) {
+  const votes = activeMatch.pass.votes;
+  votes[key] = votes[key] || {};
+  votes[key][playerId] = list;
+}
+
+// Passi della notte in cui gioca questo giocatore
+function passStepsFor(player, plan) {
+  return plan.filter(st => st.kind !== 'intro' && st.kind !== 'dawn' && (st.aliveHolders || []).some(h => h.id === player.id));
+}
+
+function passTargetGrid(step, player, key, chosen, allowNone) {
+  const options = getTargetOptions(step, activeMatch.players, rolesDB, activeMatch.prevNightChoices || {}, isRulesEnforced());
+  const colors = getMatchColors();
+  return `
+    <div class="target-grid">
+      ${options.map(o => `
+        <button class="target-btn${chosen.includes(o.id) ? ' selected' : ''}" ${o.disabled ? 'disabled' : ''} onclick="passPick('${key}', '${o.id}', ${step.targets || 1})">
+          <span class="target-name">${avatarHtml(o.name, colors[o.id], 'sm')} ${escapeHtml(o.name)}</span>
+          ${o.reason ? `<span class="target-reason">${escapeHtml(o.reason)}</span>` : ''}
+        </button>`).join('')}
+    </div>
+    ${allowNone ? `<button class="btn btn-sm${chosen.length === 1 && chosen[0] === '' ? ' btn-primary' : ''}" onclick="passPick('${key}', '', 1)">Nessuno</button>` : ''}`;
+}
+
+/**
+ * Un pezzo della schermata segreta: { html, complete, needsDecoy }.
+ * needsDecoy = in questo pezzo non c'è niente da toccare (serve la finta mossa).
+ */
+function renderPassSection(step, player) {
+  const role = getStepRoles(step)[0];
+  const nameOf = id => (activeMatch.players.find(p => p.id === id) || { name: '?' }).name;
+  const others = step.aliveHolders.filter(h => h.id !== player.id).map(h => h.name);
+  const title = `<div class="potion-title">${escapeHtml(role.icon)} ${escapeHtml(step.kind === 'wolves' ? 'Il branco' : role.name)}</div>`;
+
+  if (step.exhausted) {
+    return { html: `${title}<div class="guide-muted">🔒 Hai già usato ${step.kind === 'witch' ? 'entrambe le pozioni' : 'il tuo potere'}.</div>`, complete: true, needsDecoy: true };
+  }
+
+  if (step.kind === 'wolves') {
+    const pack = others.length ? `🐺 Il tuo branco: <strong>${escapeHtml(joinNames(others))}</strong>.` : '🐺 Sei l\'unico lupo rimasto.';
+    if (step.noKill) {
+      return { html: `${title}<div class="guide-info">${pack}</div><div class="guide-empty">🌑 Eclissi: stanotte il branco non può uccidere.</div>`, complete: true, needsDecoy: true };
+    }
+    const targets = step.targets || 1;
+    const mine = getPassVote(step.key, player.id) || [];
+    const sofar = step.aliveHolders
+      .filter(h => h.id !== player.id && getPassVote(step.key, h.id))
+      .map(h => `${escapeHtml(h.name)} → ${escapeHtml(getPassVote(step.key, h.id).filter(Boolean).map(nameOf).join(' e ') || 'nessuno')}`);
+    return {
+      html: `${title}
+        <div class="guide-info">${pack}${sofar.length ? `<br>Scelte del branco finora: ${sofar.join(', ')}.` : ''}</div>
+        ${targets > 1 ? '<div class="guide-info">🌕 Luna rossa: stanotte scegliete <strong>due</strong> vittime.</div>' : ''}
+        <div class="guide-question">Chi volete sbranare?${targets > 1 ? ` <span class="guide-muted">(${mine.length} di 2)</span>` : ''}</div>
+        ${passTargetGrid(step, player, step.key, mine, false)}
+        <div class="guide-muted">Se il branco non è d'accordo, vince la persona scelta da più lupi (a parità, la prima scelta).</div>`,
+      complete: mine.length >= targets,
+      needsDecoy: false
+    };
+  }
+
+  if (step.kind === 'witch') {
+    let html = title;
+    let complete = true;
+    if (!step.saveUsed) {
+      const save = getPassVote(witchSaveKey(step.key), player.id);
+      complete = complete && !!save;
+      html += `<div class="guide-question">💚 Usi la pozione della vita sulla vittima dei lupi di stanotte, chiunque sia?</div>
+        <div class="pass-yes-no">
+          <button class="btn${save && save[0] === ANY_WOLF_VICTIM ? ' btn-success' : ''}" onclick="passPick('${witchSaveKey(step.key)}', '${ANY_WOLF_VICTIM}', 1, true)">Sì, salvala</button>
+          <button class="btn${save && save[0] === '' ? ' btn-primary' : ''}" onclick="passPick('${witchSaveKey(step.key)}', '', 1, true)">No</button>
+        </div>`;
+    }
+    if (!step.killUsed) {
+      const kill = getPassVote(step.key, player.id);
+      complete = complete && !!kill;
+      html += `<div class="guide-question">☠️ Usi la pozione della morte? Su chi?</div>${passTargetGrid(step, player, step.key, kill || [], true)}`;
+    }
+    return { html, complete, needsDecoy: false };
+  }
+
+  if (step.blind) {
+    return { html: `${title}<div class="guide-empty">🌫️ Nebbia: stanotte non vedi nulla.</div>`, complete: true, needsDecoy: true };
+  }
+
+  if (step.kind === 'medium') {
+    const burned = findBurnedOnDay(activeMatch.players, activeMatch.turn - 1);
+    const wasWolf = burned && getRoleById(burned.roleId).faction === 'Branco';
+    const text = !burned ? '🔥 Ieri nessuno è stato bruciato al rogo.'
+      : wasWolf ? `👍 ${escapeHtml(burned.name)}, bruciato ieri, <strong>era un lupo</strong>.`
+        : `👎 ${escapeHtml(burned.name)}, bruciato ieri, <strong>non era un lupo</strong>.`;
+    return { html: `${title}<div class="guide-result ${wasWolf ? 'result-danger' : 'result-good'}">${text}</div>`, complete: true, needsDecoy: true };
+  }
+
+  if (step.kind === 'none') {
+    const group = others.length ? `<div class="guide-info">Gli altri del tuo gruppo: <strong>${escapeHtml(joinNames(others))}</strong>.</div>` : '';
+    return { html: `${title}${group || '<div class="guide-muted">Stanotte ti svegli e basta.</div>'}`, complete: true, needsDecoy: true };
+  }
+
+  // Azioni con un bersaglio: protegge, indaga, segno, copia, uccide, indica
+  const picked = getPassVote(step.key, player.id) || [];
+  const target = picked[0] ? activeMatch.players.find(p => p.id === picked[0]) : null;
+  let result = '';
+  if (target) {
+    if (step.kind === 'investigate') {
+      result = investigateAnswer(target, findRoleOrNull).isWolf
+        ? `<div class="guide-result result-danger">👍 Sì: <strong>${escapeHtml(target.name)}</strong> è un lupo.</div>`
+        : `<div class="guide-result result-good">👎 No: <strong>${escapeHtml(target.name)}</strong> non è un lupo.</div>`;
+    } else if (step.kind === 'protect') {
+      result = `<div class="guide-result result-good">🛡️ Stanotte proteggi <strong>${escapeHtml(target.name)}</strong>.</div>`;
+    } else if (step.kind === 'mark') {
+      result = `<div class="guide-result">${escapeHtml(role.icon)} Domattina verrà annunciato il segno su <strong>${escapeHtml(target.name)}</strong>.</div>`;
+    } else if (step.kind === 'copy') {
+      const newRoleId = copyResultRoleId(findRoleOrNull(target.roleId), rolesDB);
+      const newRole = newRoleId ? getRoleById(newRoleId) : null;
+      result = `<div class="guide-result">🎭 Dall'alba sarai: <strong>${newRole ? `${escapeHtml(newRole.icon)} ${escapeHtml(newRole.name)}` : 'senza un ruolo nuovo'}</strong>.</div>`;
+    } else if (step.kind === 'kill') {
+      result = `<div class="guide-result result-danger">${escapeHtml(role.icon)} Hai scelto <strong>${escapeHtml(target.name)}</strong>.</div>`;
+    } else {
+      result = `<div class="guide-result">📌 Hai indicato <strong>${escapeHtml(target.name)}</strong>.</div>`;
+    }
+  }
+  const question = step.kind === 'kill' ? 'Chi vuoi colpire? (se vuoi)' : (NIGHT_ACTIONS[step.kind] || NIGHT_ACTIONS.note).question;
+  return {
+    html: `${title}<div class="guide-question">${escapeHtml(question)}</div>${passTargetGrid(step, player, step.key, picked, step.kind === 'kill')}${result}`,
+    complete: picked.length > 0,
+    needsDecoy: false
+  };
+}
+
+// Schermata segreta di un giocatore: le sue mosse (o la finta mossa) e se ha finito
+function buildPassAction(player) {
+  const plan = currentNightPlan();
+  const role = getRoleById(player.roleId);
+  const sections = passStepsFor(player, plan).map(st => renderPassSection(st, player));
+  const needsDecoy = sections.every(sec => sec.needsDecoy);
+  let html = `<div class="pass-role ${getFactionClass(role.faction)}">
+      <span class="pass-role-icon">${escapeHtml(role.icon)}</span>
+      <span><strong>${escapeHtml(player.name)}, sei: ${escapeHtml(role.name)}</strong><span class="card-subtitle">${escapeHtml(role.faction)}</span></span>
+    </div>`;
+  html += sections.map(sec => sec.html).join('');
+  let complete = sections.every(sec => sec.complete);
+  if (needsDecoy) {
+    const decoy = activeMatch.pass.decoy[player.id];
+    const colors = getMatchColors();
+    const peeks = roleTraits(findRoleOrNull(player.roleId)).peeksAtWolves;
+    html += `<div class="guide-info">${sections.length ? 'Non hai altro da fare.' : 'Stanotte non hai niente da fare.'} Tocca un nome qualsiasi: non succede nulla, serve solo a non farti scoprire.${peeks ? '<br>👀 Senza Narratore non si può sbirciare.' : ''}</div>
+      <div class="target-grid">
+        ${activeMatch.players.filter(p => !p.isDead).map(p => `
+          <button class="target-btn${decoy === p.id ? ' selected' : ''}" onclick="passDecoy('${p.id}')">
+            <span class="target-name">${avatarHtml(p.name, colors[p.id], 'sm')} ${escapeHtml(p.name)}</span>
+          </button>`).join('')}
+      </div>`;
+    complete = complete && !!decoy;
+  }
+  return { html, complete };
+}
+
+function renderPassNight() {
+  const pass = ensurePass();
+  const total = pass.order.length;
+  const body = document.getElementById('guideStep');
+  const bar = document.getElementById('guideBottomBar');
+  document.getElementById('guideChips').innerHTML = '';
+  let html = renderDeathActionsCard();
+  let nav = '';
+  const player = passPlayer(pass);
+
+  if (pass.stage === 'intro') {
+    document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · senza Narratore`;
+    const first = activeMatch.players.find(p => p.id === pass.order[0]);
+    html += `<div class="guide-title">🌙 Cala la notte</div>`;
+    if (activeMatch.turn === 1 && activeMatch.deckAnnounced) {
+      html += `<div class="guide-info">📣 Prima di iniziare, leggete i ruoli in gioco:</div>${phraseHtml(escapeHtml(deckAnnouncement(activeMatch.initialDeckMap, findRoleOrNull)))}`;
+    }
+    html += phraseHtml(escapeHtml(AUTO_NIGHTFALL_PHRASE));
+    const ev = currentRoundEvent();
+    if (ev) html += renderEventCard(ev);
+    html += `<div class="guide-info">Chi riceve il telefono tocca <strong>"Sono io"</strong>, fa la sua mossa in segreto e tocca <strong>"Fatto"</strong>. Chi non ha niente da fare tocca un nome a caso: così nessuno capisce chi ha poteri.</div>
+      <div class="guide-muted">Ordine: ${escapeHtml(pass.order.map(id => (activeMatch.players.find(p => p.id === id) || { name: '?' }).name).join(' → '))}</div>`;
+    nav = `<div class="guide-nav"><button class="btn btn-primary guide-next" onclick="passStart()">📱 Inizia: telefono a ${escapeHtml(first ? first.name : '')}</button></div>`;
+  } else if (pass.stage === 'cover' && player) {
+    document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · telefono ${pass.index + 1} di ${total}`;
+    html += `<div class="pass-cover">
+        <div class="guide-muted">📱 Passa il telefono a:</div>
+        ${avatarHtml(player.name, getMatchColors()[player.id], 'lg')}
+        <div class="pass-cover-name">${escapeHtml(player.name)}</div>
+        <div class="guide-muted">Tutti gli altri tengono gli occhi chiusi.</div>
+      </div>`;
+    nav = `<div class="guide-nav"><button class="btn btn-primary guide-next" onclick="passReveal()">👆 Sono ${escapeHtml(player.name)}: inizio</button></div>`;
+  } else if (pass.stage === 'action' && player) {
+    document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · telefono ${pass.index + 1} di ${total}`;
+    const action = buildPassAction(player);
+    html += action.html;
+    nav = `<div class="guide-nav"><button class="btn btn-success guide-next" ${action.complete ? '' : 'disabled'} onclick="passDone()">✅ Fatto: copri e passa il telefono</button></div>`;
+  } else {
+    pass.stage = 'done';
+    document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · tutti hanno giocato`;
+    html += `<div class="guide-title">🌅 Fine della notte</div>${phraseHtml(escapeHtml(AUTO_DONE_PHRASE))}`;
+    nav = `<div class="guide-nav"><button class="btn btn-warning guide-next" onclick="finishPassNight()">☀️ Fai sorgere il Giorno ${activeMatch.turn}</button></div>`;
+  }
+
+  body.innerHTML = html;
+  bar.innerHTML = nav;
+  stopEmptyCallTimer();
+  maybeNarrateParts(passNarrationKey(pass), passNarration(pass));
+}
+
+function passNarration(pass) {
+  const player = passPlayer(pass);
+  if (pass.stage === 'intro') {
+    const lines = [];
+    if (activeMatch.turn === 1 && activeMatch.deckAnnounced) lines.push(deckAnnouncement(activeMatch.initialDeckMap, findRoleOrNull));
+    lines.push(AUTO_NIGHTFALL_PHRASE);
+    const ev = currentRoundEvent();
+    if (ev) lines.push(ev.phrase);
+    return [{ sound: 'owl' }].concat(lines.map(say => ({ say })));
+  }
+  if (pass.stage === 'cover' && player) return [{ say: `Passa il telefono a ${player.name}.` }];
+  if (pass.stage === 'done') return [{ say: AUTO_DONE_PHRASE }];
+  return [];
+}
+
+function passStart() {
+  const pass = ensurePass();
+  pass.stage = 'cover';
+  pass.index = 0;
+  saveMatchToStorage();
+  vibrate('tap');
+  renderNarratorGuide();
+}
+
+function passReveal() {
+  ensurePass().stage = 'action';
+  saveMatchToStorage();
+  vibrate('reveal');
+  renderNarratorGuide();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Tocco su un nome nella schermata segreta (targets = quante persone sceglie; toggle = sì/no della pozione)
+function passPick(key, playerId, targets, toggle) {
+  const pass = ensurePass();
+  const me = passPlayer(pass);
+  if (!me || pass.stage !== 'action') return;
+  vibrate('tap');
+  const current = getPassVote(key, me.id) || [];
+  let next;
+  if (toggle || playerId === '' || targets <= 1) {
+    next = [playerId];
+  } else if (current.includes(playerId)) {
+    next = current.filter(id => id !== playerId);
+  } else if (current.filter(Boolean).length < targets) {
+    next = current.filter(Boolean).concat(playerId);
+  } else {
+    showToast(`Hai già scelto ${targets} persone: toccane una per toglierla.`, 'warn');
+    return;
+  }
+  setPassVote(key, me.id, next);
+  saveMatchToStorage();
+  renderNarratorGuide();
+}
+
+function passDecoy(playerId) {
+  const pass = ensurePass();
+  const me = passPlayer(pass);
+  if (!me) return;
+  vibrate('tap');
+  pass.decoy[me.id] = playerId;
+  saveMatchToStorage();
+  renderNarratorGuide();
+}
+
+function passDone() {
+  const pass = ensurePass();
+  const me = passPlayer(pass);
+  if (!me || !buildPassAction(me).complete) return;
+  vibrate('tap');
+  pass.index++;
+  pass.stage = pass.index < pass.order.length ? 'cover' : 'done';
+  saveMatchToStorage();
+  renderNarratorGuide();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Alba: le mosse segrete diventano le scelte della notte, poi tutto come con il Narratore
+function finishPassNight() {
+  const pass = ensurePass();
+  const plan = currentNightPlan();
+  const choices = {};
+  const inOrder = byPlayer => pass.order.filter(id => byPlayer && byPlayer[id]).map(id => byPlayer[id]);
+  plan.forEach(st => {
+    if (st.kind === 'intro' || st.kind === 'dawn') return;
+    const picked = pickFromVotes(inOrder(pass.votes[st.key]), st.targets || 1);
+    if (picked[0]) choices[st.key] = picked[0];
+    if (picked[1]) choices[secondTargetKey(st.key)] = picked[1];
+    if (st.kind === 'witch') {
+      const saves = inOrder(pass.votes[witchSaveKey(st.key)]);
+      if (saves.some(list => list[0] === ANY_WOLF_VICTIM)) choices[witchSaveKey(st.key)] = ANY_WOLF_VICTIM;
+    }
+  });
+  activeMatch.nightChoices = choices;
+  advanceToDay();
+}
+
+/* =========================================================================
    VOCE E SUONI DEL NARRATORE
    A ogni passo nuovo: prima il suono (gufo, ululato, gallo, campanella), poi la voce legge la frase.
    La chiusura delle frasi dei ruoli («...chiude gli occhi») si legge quando si tocca Avanti.
@@ -2422,8 +2911,12 @@ function narrationKey(step) {
 // Segna il passo attuale come già letto (dopo una ripresa o un "Annulla", senza rileggere)
 function syncNarrationKey() {
   if (!activeMatch || activeMatch.status !== 'playing') return;
-  const plan = getGuidePlan();
-  lastNarratedKey = narrationKey(plan[getGuideIndex(plan)]);
+  if (isAutoMatch() && activeMatch.phase === 'night') {
+    lastNarratedKey = passNarrationKey(ensurePass());
+  } else {
+    const plan = getGuidePlan();
+    lastNarratedKey = narrationKey(plan[getGuideIndex(plan)]);
+  }
   pendingCloseText = '';
   stopNarration();
 }
@@ -2446,12 +2939,15 @@ function stepNarration(step) {
 }
 
 function maybeNarrateStep(step) {
-  const key = narrationKey(step);
+  maybeNarrateParts(narrationKey(step), stepNarration(step));
+}
+
+function maybeNarrateParts(key, stepParts) {
   if (key === lastNarratedKey) return;
   lastNarratedKey = key;
   const parts = pendingCloseText ? [{ say: pendingCloseText }] : [];
   pendingCloseText = '';
-  narrate(parts.concat(stepNarration(step)));
+  if (parts.length || stepParts.length) narrate(parts.concat(stepParts));
 }
 
 // Avanti da un passo di un ruolo: prima si dice «...chiude gli occhi»
@@ -2479,15 +2975,15 @@ function formatTimer(sec) {
 }
 
 function updateTimerUI() {
-  const disp = document.getElementById('dayTimerDisplay');
-  const btn = document.getElementById('btnDayTimerPlay');
-  if (disp) {
-    disp.textContent = formatTimer(dayTimerSeconds);
-    disp.classList.toggle('expired', dayTimerSeconds === 0);
-  }
-  if (btn) {
-    btn.textContent = dayTimerInterval ? '⏸️ Pausa' : '▶️ Via';
-  }
+  [['dayTimerDisplay', 'btnDayTimerPlay'], ['tableTimer', 'tableTimerPlay']].forEach(([displayId, buttonId]) => {
+    const disp = document.getElementById(displayId);
+    const btn = document.getElementById(buttonId);
+    if (disp) {
+      disp.textContent = formatTimer(dayTimerSeconds);
+      disp.classList.toggle('expired', dayTimerSeconds === 0);
+    }
+    if (btn) btn.textContent = dayTimerInterval ? '⏸️ Pausa' : '▶️ Via';
+  });
 }
 
 function getTimerDuration() {
@@ -3126,7 +3622,7 @@ function renderVoteVoters() {
   getVoters(activeMatch.players).forEach(voter => {
     const weight = voteWeight(voter, findRoleOrNull(voter.roleId));
     const tags = [];
-    if (weight === 2) tags.push('<span class="badge badge-alleato">🎖️ vale 2</span>');
+    if (weight === 2 && !isAutoMatch()) tags.push('<span class="badge badge-alleato">🎖️ vale 2</span>');
     if (voter.isGhost) tags.push('<span class="badge badge-solitario">👻 Fantasma</span>');
     const current = vote.votes[voter.id] || '';
     const options = candidates.map(c =>
@@ -3202,6 +3698,7 @@ function renderVoteTally() {
     actions.innerHTML = '';
   }
   document.getElementById('btnVoteRestart').style.display = vote.round > 1 ? 'inline-flex' : 'none';
+  renderTableView();
 }
 
 function startRunoff() {
@@ -3458,6 +3955,9 @@ function renderGuide() {
     decider: 'se c\'è un pareggio decide chi ha il voto doppio (es. il Sindaco).'
   };
   const variants = [`⚖️ <strong>Pareggio al voto:</strong> ${tieTexts[getTieRule()]}`];
+  if (activeMatch ? isAutoMatch() : isAutoPlayMode()) {
+    variants.unshift('🤝 <strong>Senza Narratore:</strong> di notte il telefono passa a tutti i vivi, uno alla volta. Chi non ha niente da fare tocca un nome a caso. Il branco sceglie la vittima con più voti (a parità, la prima scelta); la Strega decide se salvare la vittima dei lupi senza sapere chi è; la Bambina non può sbirciare.');
+  }
   if (option('revealDead')) variants.push('🪦 <strong>Ruoli svelati:</strong> quando qualcuno muore si annuncia che ruolo aveva.');
   if (option('deckAnnounced')) variants.push('📣 <strong>Mazzo annunciato:</strong> all\'inizio si dice a tutti quali ruoli sono in gioco.');
   if (option('surpriseEvents')) {
@@ -3733,6 +4233,214 @@ function onUndoToastClick() {
   restore();
   vibrate('tap');
   showToast('↩️ Annullato: tutto come prima.');
+}
+
+/* =========================================================================
+   BACKUP: RUOLI, GIOCATORI E IMPOSTAZIONI IN UN FILE
+========================================================================= */
+let pendingRestore = null;
+
+async function saveBackup() {
+  const now = new Date();
+  const backup = buildBackup({ roles: rolesDB, players: setupPlayers, settings: appSettings, knownPlayers: loadKnownPlayers() }, now.toISOString(), getAppVersion());
+  const text = JSON.stringify(backup, null, 2);
+  const name = backupFileName(now);
+  const app = nativeApp();
+  try {
+    if (app && app.isNative && app.shareFile) {
+      const shared = await app.shareFile(name, text);
+      if (shared) showToast('💾 Backup pronto: tienilo in un posto sicuro (Drive, email, WhatsApp...).');
+    } else {
+      downloadTextFile(name, text);
+      showToast(`💾 Backup salvato: ${name}`);
+    }
+  } catch (e) {
+    showToast('Non sono riuscito a salvare il backup. Riprova.', 'warn');
+  }
+}
+
+// Nel browser: scarica il file
+function downloadTextFile(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function openRestoreModal() {
+  closeInfoModal();
+  pendingRestore = null;
+  document.getElementById('restoreText').value = '';
+  document.getElementById('restoreFileInput').value = '';
+  previewRestore();
+  document.getElementById('modalRestore').classList.add('active');
+}
+
+function closeRestoreModal() {
+  document.getElementById('modalRestore').classList.remove('active');
+  pendingRestore = null;
+}
+
+function onRestoreFileChosen(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    document.getElementById('restoreText').value = String(reader.result || '');
+    previewRestore();
+  };
+  reader.onerror = () => showToast('Non riesco a leggere questo file.', 'warn');
+  reader.readAsText(file);
+}
+
+function previewRestore() {
+  const text = document.getElementById('restoreText').value;
+  const box = document.getElementById('restorePreview');
+  const btn = document.getElementById('btnRestoreConfirm');
+  pendingRestore = null;
+  if (!text.trim()) {
+    box.style.display = 'none';
+    btn.disabled = true;
+    return;
+  }
+  const res = parseBackup(text);
+  box.style.display = 'block';
+  if (res.error) {
+    box.className = 'guide-result result-danger';
+    box.textContent = `⚠️ ${res.error}`;
+    btn.disabled = true;
+    return;
+  }
+  pendingRestore = res.data;
+  const when = res.createdAt ? new Date(res.createdAt) : null;
+  const custom = res.data.roles.filter(r => isRoleCustomized(r, DEFAULT_ROLES)).length;
+  box.className = 'guide-result result-good';
+  box.innerHTML = `✅ Backup${when && !isNaN(when) ? ` del ${escapeHtml(when.toLocaleDateString('it-IT'))}` : ''}:<br>
+    🎭 ${res.data.roles.length} ruoli (${custom} ${custom === 1 ? 'tuo' : 'tuoi'})<br>
+    👥 ${res.data.players.length} giocatori<br>
+    ⚙️ le impostazioni<br>
+    <span class="card-subtitle">Ripristinando, ruoli, giocatori e impostazioni di adesso vengono sostituiti. La partita in corso resta.</span>`;
+  btn.disabled = false;
+}
+
+function confirmRestore() {
+  const data = pendingRestore;
+  if (!data) return;
+  closeRestoreModal();
+  doWithUndo('📂 Backup ripristinato', () => {
+    rolesDB = data.roles;
+    setupPlayers = data.players.slice();
+    appSettings = { ...appSettings, ...data.settings, knownDefaultRoleIds: data.settings.knownDefaultRoleIds || null, selectedPresetCode: null };
+    saveKnownPlayers(data.knownPlayers);
+    migrateRoles();
+    pruneDeckOfMissingRoles();
+    saveRolesToStorage();
+    savePlayersToStorage();
+    saveSettingsToStorage();
+    setupStep = 1;
+    renderSetupScreen();
+    showScreen('screenSetup');
+  });
+}
+
+/* =========================================================================
+   VISTA PER IL TAVOLO: fase, timer, vivi e voti. Mai i ruoli (tranne quelli già svelati a tutti).
+   Si esce solo tenendo premuto, così nessuno torna per sbaglio alla schermata del Narratore.
+========================================================================= */
+let tableExitTimer = null;
+
+function isTableViewOpen() {
+  return document.getElementById('tableView').classList.contains('open');
+}
+
+function openTableView() {
+  if (!activeMatch) return;
+  vibrate('tap');
+  const view = document.getElementById('tableView');
+  view.classList.add('open');
+  view.setAttribute('aria-hidden', 'false');
+  renderTableView();
+}
+
+function closeTableView() {
+  cancelTableExitHold();
+  const view = document.getElementById('tableView');
+  view.classList.remove('open');
+  view.setAttribute('aria-hidden', 'true');
+}
+
+function startTableExitHold(e) {
+  if (e) e.preventDefault();
+  cancelTableExitHold();
+  document.getElementById('btnTableExit').classList.add('holding');
+  tableExitTimer = setTimeout(() => {
+    tableExitTimer = null;
+    vibrate('reveal');
+    closeTableView();
+  }, 900);
+}
+
+function cancelTableExitHold() {
+  if (tableExitTimer) clearTimeout(tableExitTimer);
+  tableExitTimer = null;
+  document.getElementById('btnTableExit').classList.remove('holding');
+}
+
+function renderTableView() {
+  if (!activeMatch || !isTableViewOpen()) return;
+  const isDay = activeMatch.phase === 'day';
+  document.getElementById('tablePhase').textContent = isDay ? `☀️ Giorno ${activeMatch.turn}` : `🌙 Notte ${activeMatch.turn}`;
+  const ev = currentRoundEvent();
+  const showEvent = ev && (isDay ? ev.phase === 'day' : true);
+  document.getElementById('tableEvent').textContent = showEvent ? `${ev.icon} ${ev.name}: ${isDay ? eventTextToday(ev) : ev.text}` : (isDay ? '' : 'Il villaggio dorme...');
+  document.getElementById('tableTimerBox').style.display = isDay ? 'flex' : 'none';
+  updateTimerUI();
+
+  // Giocatori: vivi prima, poi i morti (con il ruolo solo se si gioca con i ruoli svelati)
+  const colors = getMatchColors();
+  const reveal = !!activeMatch.revealDead;
+  const alive = activeMatch.players.filter(p => !p.isDead);
+  const dead = activeMatch.players.filter(p => p.isDead);
+  document.getElementById('tableAliveCount').textContent = alive.length;
+  document.getElementById('tablePlayers').innerHTML = alive.concat(dead).map(p => {
+    let note = '';
+    if (p.isGhost) note = '👻 Fantasma: vota';
+    else if (p.isDead) note = '💀 Morto';
+    if (p.isDead && reveal) {
+      const role = getRoleById(p.roleId);
+      note += ` • ${role.icon} ${role.name}`;
+    }
+    return `<div class="table-player${p.isDead ? ' dead' : ''}">
+      ${avatarHtml(p.name, colors[p.id], 'sm')}
+      <span style="min-width: 0;"><span class="table-player-name">${escapeHtml(p.name)}</span>${note ? `<span class="table-player-note">${escapeHtml(note)}</span>` : ''}</span>
+    </div>`;
+  }).join('');
+
+  // Votazione di oggi: conteggio e rogo
+  const voteBox = document.getElementById('tableVoteBox');
+  const burned = isDay ? findBurnedOnDay(activeMatch.players, activeMatch.turn) : null;
+  const vote = isDay && activeMatch.vote && activeMatch.vote.turn === activeMatch.turn ? activeMatch.vote : null;
+  let html = '';
+  if (burned) {
+    html = `<div class="guide-result result-danger">🔥 Oggi è stato bruciato <strong>${escapeHtml(burned.name)}</strong>.</div>`;
+  } else if (vote && Object.keys(vote.votes).length) {
+    const tally = tallyVotes(activeMatch.players, vote.votes, findRoleOrNull, vote.candidates);
+    html = `<div class="card-subtitle">${vote.round > 1 ? '⚖️ Ballottaggio • ' : ''}Hanno votato ${tally.castCount} su ${tally.voterCount}</div>` +
+      tally.totals.filter(r => r.votes > 0).map(r => {
+        const width = tally.maxVotes ? Math.round((r.votes / tally.maxVotes) * 100) : 0;
+        return `<div class="tally-row${tally.leaders.includes(r.playerId) ? ' tally-leader' : ''}">
+          <div class="tally-bar" style="width: ${width}%;"></div>
+          <span class="tally-name">${escapeHtml(r.name)}</span>
+          <span class="tally-votes">${r.votes} ${r.votes === 1 ? 'voto' : 'voti'}</span>
+        </div>`;
+      }).join('');
+  }
+  voteBox.style.display = html ? 'flex' : 'none';
+  document.getElementById('tableVote').innerHTML = html;
 }
 
 /* =========================================================================

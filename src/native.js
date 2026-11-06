@@ -6,6 +6,7 @@ import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { Share } from '@capacitor/share';
 import { Clipboard } from '@capacitor/clipboard';
 import { TextToSpeech, QueueStrategy } from '@capacitor-community/text-to-speech';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 
 const isNative = Capacitor.isNativePlatform();
 const VOICE_LANG = 'it-IT';
@@ -65,6 +66,21 @@ window.LupusApp = {
   /** Apre il menu "Condividi" del telefono (WhatsApp, Telegram, email...). */
   async share(text, title = 'Ruoli per Lupus') {
     await Share.share({ title, text, dialogTitle: 'Condividi' });
+  },
+
+  /**
+   * Salva un file di testo e apre "Condividi" per metterlo dove si vuole (Drive, WhatsApp, email...).
+   * Restituisce false se la persona chiude "Condividi" senza scegliere.
+   */
+  async shareFile(name, text) {
+    const { uri } = await Filesystem.writeFile({ path: name, data: text, directory: Directory.Cache, encoding: Encoding.UTF8 });
+    try {
+      await Share.share({ title: name, files: [uri], dialogTitle: 'Salva il backup' });
+      return true;
+    } catch (e) {
+      if (/cancel/i.test(String(e && e.message))) return false;
+      throw e;
+    }
   },
 
   /** Copia un testo negli appunti. */

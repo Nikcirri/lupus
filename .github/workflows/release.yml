@@ -114,8 +114,10 @@ jobs:
           chmod +x gradlew
           set -o pipefail
           if ! ./gradlew --no-daemon --console=plain --stacktrace assembleRelease 2>&1 | tee gradle.log; then
+            # Se R8 (lo sfoltimento del codice) trova classi mancanti, qui ci sono le regole suggerite.
+            cat app/build/outputs/mapping/release/missing_rules.txt 2>/dev/null || true
             # Riassunto dell'errore visibile anche senza aprire i log completi.
-            MSG=$( { sed -n '/What went wrong/,/Try:/p' gradle.log; grep -E "^Caused by|^e: |error:" gradle.log | head -n 15; } | head -n 40 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            MSG=$( { sed -n '/What went wrong/,/Try:/p' gradle.log; grep -E "^Caused by|^e: |error:|Missing class" gradle.log | head -n 15; } | head -n 40 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
             echo "::error title=Build Android fallita::$MSG"
             exit 1
           fi

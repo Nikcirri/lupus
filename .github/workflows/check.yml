@@ -1,4 +1,5 @@
 # Controlla il codice a ogni modifica: test delle regole, build web e build Android di prova (non pubblica niente).
+# La build Android è quella "release", con R8 come l'APK pubblicato: se lo sfoltimento rompe qualcosa, si vede subito.
 name: Controllo
 
 on:
@@ -37,14 +38,16 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-      - name: Build Android di prova (APK di debug, non pubblicato)
+      - name: Build Android di prova (come quella pubblicata, ma non firmata e non pubblicata)
         working-directory: android
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
           set -o pipefail
-          if ! ./gradlew --no-daemon --console=plain assembleDebug 2>&1 | tee gradle.log; then
-            MSG=$( { sed -n '/What went wrong/,/Try:/p' gradle.log; grep -E "^Caused by|^e: |error:" gradle.log | head -n 15; } | head -n 40 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+          if ! ./gradlew --no-daemon --console=plain assembleRelease 2>&1 | tee gradle.log; then
+            # Se R8 (lo sfoltimento del codice) trova classi mancanti, qui ci sono le regole suggerite.
+            cat app/build/outputs/mapping/release/missing_rules.txt 2>/dev/null || true
+            MSG=$( { sed -n '/What went wrong/,/Try:/p' gradle.log; grep -E "^Caused by|^e: |error:|Missing class" gradle.log | head -n 15; } | head -n 40 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
             echo "::error title=Build Android fallita::$MSG"
             exit 1
           fi

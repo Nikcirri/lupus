@@ -1,0 +1,84 @@
+# Prova l'APK vero (sfoltito con R8, come quello pubblicato) su un telefono Android finto (emulatore):
+# apre l'app, chiama ogni funzione del telefono (vibrazione, file, appunti, Condividi, tasto Indietro),
+# fa partire una partita e salva le schermate. Non pubblica niente: si lancia a mano da Actions,
+# dopo ogni modifica alla parte Android o ai plugin.
+name: Prova su Android
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: prova-android
+  cancel-in-progress: true
+
+jobs:
+  emulatore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run verify
+
+      - name: Prepara l'app di prova (debug della pagina acceso, solo in questa prova)
+        run: |
+          node -e "
+            const fs = require('fs');
+            const c = JSON.parse(fs.readFileSync('capacitor.config.json', 'utf8'));
+            c.android = { ...(c.android || {}), webContentsDebuggingEnabled: true };
+            fs.writeFileSync('capacitor.config.json', JSON.stringify(c, null, 2));
+          "
+          npx cap sync android
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Costruisci l'APK (release con R8) e firmalo con una chiave usa e getta
+        working-directory: android
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+          ./gradlew --no-daemon --console=plain assembleRelease
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/prova.jks" -alias prova -keyalg RSA -keysize 2048 \
+            -validity 2 -storepass provaprova -keypass provaprova -dname "CN=Prova Lupus"
+          "$BT/zipalign" -f -p 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/allineato.apk"
+          "$BT/apksigner" sign --ks "$RUNNER_TEMP/prova.jks" --ks-pass pass:provaprova --key-pass pass:provaprova \
+            --out "$RUNNER_TEMP/lupus-prova.apk" "$RUNNER_TEMP/allineato.apk"
+          ls -la "$RUNNER_TEMP/lupus-prova.apk"
+          echo "APK_PROVA=$RUNNER_TEMP/lupus-prova.apk" >> "$GITHUB_ENV"
+          echo "PROVA_OUT=$RUNNER_TEMP/prova-android" >> "$GITHUB_ENV"
+
+      - name: Accendi KVM (serve all'emulatore per andare veloce)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Prova sull'emulatore (Android 14)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: bash scripts/android-emulator-test.sh "$APK_PROVA" "$PROVA_OUT"
+
+      - name: Conserva schermate e log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prova-android
+          path: ${{ env.PROVA_OUT }}
+          if-no-files-found: ignore

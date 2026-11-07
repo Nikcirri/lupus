@@ -1,21 +1,19 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Regole per R8, lo strumento di Android che toglie dall'APK il codice delle librerie che l'app non usa.
+# Il ponte tra la pagina web e Android (Capacitor) trova i plugin e i loro metodi per nome, con la
+# "reflection": per sicurezza le classi di Capacitor, dei plugin e dell'app restano intere.
+-keep class com.getcapacitor.** { *; }
+-keep class com.capacitorjs.plugins.** { *; }
+-keep class io.ionic.libs.** { *; }
+-keep class org.apache.cordova.** { *; }
+-keep class com.nikcirri.lupus.** { *; }
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Metodi che la pagina web chiama direttamente.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Numeri di riga negli errori: utili se un giorno l'app si chiudesse da sola.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sfondo della schermata di avvio: colore scuro con la luna e il lupo al centro.
+     Disegnato con i vettori invece di 11 immagini PNG (una per ogni schermo): pesa pochi byte. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background" />
+    <item
+        android:width="144dp"
+        android:height="144dp"
+        android:drawable="@drawable/splash_icon"
+        android:gravity="center" />
+</layer-list>

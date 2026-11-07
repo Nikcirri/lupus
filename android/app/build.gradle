@@ -30,6 +30,12 @@ android {
             }
         }
     }
+    // File delle librerie Kotlin che servono solo per il debug o la "reflection": l'app non li usa.
+    packaging {
+        resources {
+            excludes += ['DebugProbesKt.bin', 'kotlin/**', 'META-INF/*.version', 'META-INF/*.kotlin_module']
+        }
+    }
     buildTypes {
         release {
             if (System.getenv("ANDROID_KEYSTORE_PATH") && System.getenv("ANDROID_KEYSTORE_PASSWORD")) {

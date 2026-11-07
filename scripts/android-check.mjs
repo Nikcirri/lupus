@@ -135,12 +135,12 @@ async function main() {
   screenshot('1-benvenuto.png');
 
   console.log('Tasto Indietro (plugin App)');
-  // contatori: il tasto arriva alla pagina? (evento "backbutton" e funzione dell'app)
-  await dt.run("window.__back = { events: 0, calls: 0 }; document.addEventListener('backbutton', () => { window.__back.events++; }); const orig = window.handleAndroidBack; window.handleAndroidBack = function () { window.__back.calls++; return orig.apply(this, arguments); }; return true;");
+  // contatore: il tasto arriva alla funzione dell'app? (senza aggiungere altri ascoltatori del tasto)
+  await dt.run("window.__backCalls = 0; const orig = window.handleAndroidBack; window.handleAndroidBack = function () { window.__backCalls++; return orig.apply(this, arguments); }; return true;");
   await sleep(1000);
   adb('shell input keyevent KEYCODE_BACK');
   await waitFor(dt, "return !document.getElementById('modalWelcome').classList.contains('active');", 'Indietro chiude il benvenuto', 10);
-  console.log(`  (tasto Indietro arrivato alla pagina: ${JSON.stringify(await dt.attempt('return window.__back;'))})`);
+  console.log(`  (tasto Indietro arrivato all'app: ${await dt.attempt('return window.__backCalls;')} volta)`);
   await sleep(500);
   check(appInFront(), "dopo Indietro l'app resta aperta", focusedWindow().trim());
 

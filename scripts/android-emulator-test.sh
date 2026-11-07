@@ -43,7 +43,7 @@ save_log
 for f in "$OUT"/*.png; do
   [ -f "$f" ] || continue
   echo "=== SCHERMATA $(basename "$f") ==="
-  node scripts/png-small.mjs "$f" 3 || true
+  node scripts/png-small.mjs "$f" || true
   echo "=== FINE SCHERMATA ==="
 done
 

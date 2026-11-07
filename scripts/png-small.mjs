@@ -1,12 +1,11 @@
 // Rimpicciolisce una schermata PNG (di un telefono) e la stampa in base64, a righe da 100 caratteri.
 // Serve alla "Prova su Android": le schermate finiscono nel log anche senza scaricare gli artefatti.
 // Solo Node, senza librerie: legge PNG a 8 bit (RGB o RGBA, non interlacciati).
-// Uso: node scripts/png-small.mjs <file.png> [fattore, es. 3]
+// Uso: node scripts/png-small.mjs <file.png> [fattore, es. 3; di base quello che porta a circa 360 pixel di larghezza]
 import { readFileSync } from 'node:fs';
 import { inflateSync, deflateSync } from 'node:zlib';
 
 const [file, factorArg] = process.argv.slice(2);
-const factor = Math.max(1, parseInt(factorArg || '3', 10));
 const png = readFileSync(file);
 
 let width = 0;
@@ -31,6 +30,8 @@ for (let pos = 8; pos < png.length;) {
   }
   pos += 12 + len;
 }
+
+const factor = Math.max(1, parseInt(factorArg, 10) || Math.round(width / 360));
 
 // Toglie i filtri delle righe (PNG: None, Sub, Up, Average, Paeth)
 const raw = inflateSync(Buffer.concat(idat));

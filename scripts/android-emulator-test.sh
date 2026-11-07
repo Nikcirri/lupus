@@ -38,6 +38,22 @@ set -e
 
 adb exec-out screencap -p > "$OUT/6-fine.png" || true
 save_log
+
+# Le schermate anche nel log, piccole e in base64: si possono guardare senza scaricare gli artefatti.
+for f in "$OUT"/*.png; do
+  [ -f "$f" ] || continue
+  small="${f%.png}.jpg"
+  if command -v convert >/dev/null 2>&1; then
+    convert "$f" -resize 360x -quality 60 "$small" || continue
+  elif command -v ffmpeg >/dev/null 2>&1; then
+    ffmpeg -loglevel error -y -i "$f" -vf scale=360:-2 -q:v 7 "$small" || continue
+  else
+    continue
+  fi
+  echo "=== SCHERMATA $(basename "$small") ==="
+  base64 -w 100 "$small"
+  echo "=== FINE SCHERMATA ==="
+done
 if grep -q "FATAL EXCEPTION" "$OUT/logcat.txt"; then
   echo "::error::L'app si è chiusa da sola (FATAL EXCEPTION nel log)"
   grep -A 30 "FATAL EXCEPTION" "$OUT/logcat.txt" | head -n 60

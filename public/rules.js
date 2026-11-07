@@ -100,19 +100,6 @@ const DEFAULT_ROLES = [
     isPair: false
   },
   {
-    id: 'gemelli',
-    name: 'Gemelli',
-    icon: '👥',
-    faction: 'Villaggio',
-    whatYouDo: 'La prima notte aprite gli occhi insieme e vi riconoscete: sapete con certezza di essere entrambi buoni.',
-    howYouWin: 'Vincete col villaggio.',
-    wakeTiming: 'solo_notte_1',
-    priority: 1,
-    narratorPhrase: '«Si svegliano i Gemelli, aprono gli occhi e si riconoscono... I Gemelli chiudono gli occhi.»',
-    narratorNote: 'Si svegliano insieme solo nella Notte 1 per guardarsi.',
-    isPair: true
-  },
-  {
     id: 'copione',
     name: 'Copione',
     icon: '🎭',
@@ -282,7 +269,7 @@ const PRESETS_BY_COUNT = {
   11: [
     { code: '11a', name: 'Branco a Tre', turns: '~4-5 turni', desc: 'Tre lupi: il villaggio deve ragionare in fretta.', roles: { lupo: 3, veggente: 1, guardia: 1, medium: 1, sindaco: 1, contadino: 4 } },
     { code: '11b', name: 'Notte Lunga', turns: '~4-5 turni', desc: 'Pozioni, frecce e Massoni contro lupi ben aiutati.', roles: { lupo: 2, indemoniato: 1, gufo: 1, strega: 1, veggente: 1, cacciatore: 1, massoni: 2, contadino: 2 } },
-    { code: '11c', name: 'Legami di Sangue', turns: '~4-5 turni', desc: 'Gemelli, Bambina e Copione: legami e segreti.', roles: { lupo: 2, indemoniato: 1, veggente: 1, gemelli: 2, fioraio: 1, bambina: 1, copione: 1, contadino: 2 } }
+    { code: '11c', name: 'Legami di Sangue', turns: '~4-5 turni', desc: 'Massoni, Bambina e Copione: legami e segreti.', roles: { lupo: 2, indemoniato: 1, veggente: 1, massoni: 2, fioraio: 1, bambina: 1, copione: 1, contadino: 2 } }
   ],
   12: [
     { code: '12a', name: 'Classico Grande', turns: '~4-5 turni', desc: 'La partita base per un gruppo numeroso.', roles: { lupo: 3, indemoniato: 1, veggente: 1, guardia: 1, medium: 1, sindaco: 1, cacciatore: 1, contadino: 3 } },
@@ -292,17 +279,17 @@ const PRESETS_BY_COUNT = {
   13: [
     { code: '13a', name: 'Classico Grande', turns: '~5-6 turni', desc: 'La partita base per un gruppo numeroso.', roles: { lupo: 3, indemoniato: 1, veggente: 1, guardia: 1, medium: 1, sindaco: 1, cacciatore: 1, contadino: 4 } },
     { code: '13b', name: 'Pozioni e Logge', turns: '~5-6 turni', desc: 'Strega, Massoni e Cacciatore, con il Criceto in agguato.', roles: { lupo: 3, gufo: 1, strega: 1, veggente: 1, guardia: 1, cacciatore: 1, massoni: 2, criceto: 1, contadino: 2 } },
-    { code: '13c', name: 'Mille Sospetti', turns: '~5-6 turni', desc: 'Quasi tutti hanno un potere: per narratori esperti.', roles: { lupo: 2, indemoniato: 1, veggente: 1, guardia: 1, medium: 1, gemelli: 2, bambina: 1, sindaco: 1, copione: 1, giullare: 1, criceto: 1 } }
+    { code: '13c', name: 'Mille Sospetti', turns: '~5-6 turni', desc: 'Quasi tutti hanno un potere: per narratori esperti.', roles: { lupo: 2, indemoniato: 1, veggente: 1, guardia: 1, medium: 1, massoni: 2, bambina: 1, sindaco: 1, copione: 1, giullare: 1, criceto: 1 } }
   ],
   14: [
     { code: '14a', name: 'Classico Grande', turns: '~5-6 turni', desc: 'La partita base per un gruppo numeroso.', roles: { lupo: 3, indemoniato: 1, veggente: 1, guardia: 1, medium: 1, sindaco: 1, cacciatore: 1, contadino: 5 } },
     { code: '14b', name: 'Notte delle Ombre', turns: '~5-6 turni', desc: 'Il branco ha due complici: Gufo e Indemoniato.', roles: { lupo: 3, gufo: 1, indemoniato: 1, strega: 1, veggente: 1, guardia: 1, cacciatore: 1, massoni: 2, medium: 1, contadino: 2 } },
-    { code: '14c', name: 'Gran Caos', turns: '~5-6 turni', desc: 'Un ruolo diverso per quasi tutti: per narratori esperti.', roles: { lupo: 3, strega: 1, veggente: 1, guardia: 1, medium: 1, gemelli: 2, bambina: 1, sindaco: 1, copione: 1, giullare: 1, criceto: 1 } }
+    { code: '14c', name: 'Gran Caos', turns: '~5-6 turni', desc: 'Un ruolo diverso per quasi tutti: per narratori esperti.', roles: { lupo: 3, strega: 1, veggente: 1, guardia: 1, medium: 1, massoni: 2, bambina: 1, sindaco: 1, copione: 1, giullare: 1, criceto: 1 } }
   ],
   15: [
     { code: '15a', name: 'Grande Villaggio', turns: '~5-6 turni', desc: 'Tanti poteri da entrambe le parti, ben bilanciati.', roles: { lupo: 3, indemoniato: 1, gufo: 1, veggente: 1, guardia: 1, medium: 1, sindaco: 1, cacciatore: 1, strega: 1, contadino: 4 } },
     { code: '15b', name: 'Tradimento nel Branco', turns: '~5-6 turni', desc: 'Quattro lupi, ma uno di loro gioca da solo.', roles: { lupo: 3, lupo_bianco: 1, veggente: 1, guardia: 1, strega: 1, cacciatore: 1, massoni: 2, medium: 1, giullare: 1, contadino: 3 } },
-    { code: '15c', name: 'Villaggio al Completo', turns: '~5-6 turni', desc: 'Quasi tutti i ruoli in gioco: per narratori esperti.', roles: { lupo: 3, strega: 1, veggente: 1, guardia: 1, medium: 1, gemelli: 2, bambina: 1, sindaco: 1, fioraio: 1, copione: 1, giullare: 1, criceto: 1 } }
+    { code: '15c', name: 'Villaggio al Completo', turns: '~5-6 turni', desc: 'Quasi tutti i ruoli in gioco: per narratori esperti.', roles: { lupo: 3, strega: 1, veggente: 1, guardia: 1, medium: 1, massoni: 2, bambina: 1, sindaco: 1, fioraio: 1, copione: 1, giullare: 1, criceto: 1 } }
   ]
 };
 
@@ -708,7 +695,7 @@ function mergeImportedRoles(existing, imported, makeId) {
       roles[idx] = { ...imp, id: roles[idx].id };
       updated++;
     } else {
-      const sameId = imp.id && roles.some(r => r.id === imp.id);
+      const sameId = imp.id && (roles.some(r => r.id === imp.id) || isReplacedRoleId(imp.id));
       roles.push({ ...imp, id: !imp.id || sameId ? makeId() : imp.id });
       added++;
     }
@@ -790,7 +777,6 @@ const DEFAULT_ROLE_RULES = {
   guardia: { nightAction: 'protect', actionRules: { notSelf: true, notSameTwice: true }, balance: 3 },
   medium: { nightAction: 'medium', balance: 3 },
   indemoniato: { balance: -5 },
-  gemelli: { balance: 2 },
   copione: { nightAction: 'copy', actionRules: { notSelf: true }, balance: -1 },
   criceto: { victory: 'survive', traits: { immuneToWolves: true, diesIfInvestigated: true }, balance: -2 },
   giullare: { victory: 'burned', balance: -2 },
@@ -940,6 +926,66 @@ function addNewDefaultRoles(roles, knownIds) {
   return { roles: list, added, knownIds: DEFAULT_ROLES.map(r => r.id) };
 }
 
+/* ---------- Ruoli base tolti dall'app (1.9: i Gemelli, uguali ai Massoni) ---------- */
+// Ruolo tolto → ruolo che lo sostituisce perché fa la stessa cosa
+const REPLACED_ROLES = { gemelli: 'massoni' };
+
+function isReplacedRoleId(id) {
+  return Object.prototype.hasOwnProperty.call(REPLACED_ROLES, id);
+}
+
+/** Id da usare al posto di un ruolo tolto (gli altri restano uguali). */
+function replacementRoleId(id) {
+  return isReplacedRoleId(id) ? REPLACED_ROLES[id] : id;
+}
+
+/**
+ * Ruoli senza quelli tolti. Se c'era un ruolo tolto e manca il suo sostituto,
+ * il sostituto si aggiunge: così il mazzo e la partita in corso lo trovano.
+ */
+function removeReplacedRoles(roles) {
+  const source = roles || [];
+  const list = source.filter(r => !(r && isReplacedRoleId(r.id)));
+  source.forEach(r => {
+    if (!r || !isReplacedRoleId(r.id)) return;
+    const to = REPLACED_ROLES[r.id];
+    const def = DEFAULT_ROLES.find(x => x.id === to);
+    if (def && !list.some(x => x && x.id === to)) list.push(JSON.parse(JSON.stringify(def)));
+  });
+  return { roles: list, changed: list.length !== source.length || list.some((r, i) => r !== source[i]) };
+}
+
+/** Mazzo { idRuolo: quanti } con i ruoli tolti contati nel loro sostituto. */
+function replaceRolesInDeck(deck) {
+  const out = {};
+  Object.entries(deck || {}).forEach(([id, qty]) => {
+    const n = Number(qty) || 0;
+    if (n <= 0) return;
+    const to = replacementRoleId(id);
+    out[to] = (out[to] || 0) + n;
+  });
+  return out;
+}
+
+/** Partita salvata: chi aveva un ruolo tolto riceve il sostituto. Restituisce true se è cambiato qualcosa. */
+function replaceRolesInMatch(match) {
+  if (!match || !Array.isArray(match.players)) return false;
+  let changed = false;
+  match.players.forEach(p => {
+    ['roleId', 'originalRoleId'].forEach(k => {
+      if (p && isReplacedRoleId(p[k])) {
+        p[k] = REPLACED_ROLES[p[k]];
+        changed = true;
+      }
+    });
+  });
+  if (match.initialDeckMap && Object.keys(match.initialDeckMap).some(isReplacedRoleId)) {
+    match.initialDeckMap = replaceRolesInDeck(match.initialDeckMap);
+    changed = true;
+  }
+  return changed;
+}
+
 function wakesOnNight(wakeTiming, turn) {
   if (wakeTiming === 'ogni_notte') return true;
   if (wakeTiming === 'solo_notte_1') return turn === 1;
@@ -1075,13 +1121,8 @@ function witchSaveKey(stepKey) {
   return `${stepKey}#save`;
 }
 
-// Pozione della vita "sulla vittima dei lupi, chiunque sia" (partite senza Narratore:
-// la Strega può fare la sua mossa prima che i lupi abbiano scelto)
-const ANY_WOLF_VICTIM = '*';
-
-/** Chi salva la pozione della vita: la vittima indicata, se è una vittima dei lupi (con '*' la prima). */
+/** Chi salva la pozione della vita: la vittima indicata, se è davvero una vittima dei lupi. */
 function witchSavedId(saveChoice, wolvesIds) {
-  if (saveChoice === ANY_WOLF_VICTIM) return wolvesIds[0] || null;
   return wolvesIds.includes(saveChoice) ? saveChoice : null;
 }
 
@@ -1382,61 +1423,9 @@ function pickSurpriseEvent(rand, excludeIds) {
   return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
 }
 
-/* ---------- Voce del Narratore ---------- */
-/**
- * Divide la frase di un ruolo in due: quella da dire quando si chiama il ruolo
- * e la chiusura («...chiude gli occhi») da dire quando ha finito.
- * Se non c'è una chiusura, tutta la frase è "open".
- */
-function splitPhrase(phrase) {
-  const text = String(phrase || '').trim();
-  const cut = Math.max(text.lastIndexOf('...'), text.lastIndexOf('…'));
-  if (cut > 0) {
-    const sep = text.startsWith('...', cut) ? 3 : 1;
-    const tail = text.slice(cut + sep).trim();
-    if (/chiud/i.test(tail)) return { open: text.slice(0, cut + sep).trim(), close: tail };
-  }
-  return { open: text, close: '' };
-}
-
-/** Testo pulito per la sintesi vocale: senza virgolette, emoji e spazi doppi. */
-function speechText(text) {
-  return String(text || '')
-    .replace(/[«»"“”]/g, '')
-    .replace(/\p{Extended_Pictographic}|️|‍/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 /* =========================================================================
-   10. PARTITA SENZA NARRATORE E BACKUP
+   10. STATISTICHE E BACKUP
 ========================================================================= */
-/**
- * Scelta finale di un gruppo (es. il branco) dalle mosse segrete dei suoi membri.
- * votes = liste di scelte nell'ordine in cui hanno votato ('' = nessuno), targets = quante persone scegliere.
- * Vince chi ha più voti; a parità, chi è stato scelto per primo.
- */
-function pickFromVotes(votes, targets) {
-  const count = new Map();
-  const firstSeen = new Map();
-  let position = 0;
-  (votes || []).forEach(list => {
-    (Array.isArray(list) ? list : [list]).forEach(id => {
-      if (!id) return;
-      count.set(id, (count.get(id) || 0) + 1);
-      if (!firstSeen.has(id)) firstSeen.set(id, position++);
-    });
-  });
-  return Array.from(count.keys())
-    .sort((a, b) => count.get(b) - count.get(a) || firstSeen.get(a) - firstSeen.get(b))
-    .slice(0, Math.max(1, targets || 1));
-}
-
-/** Ordine in cui passa il telefono di notte: i vivi, nell'ordine in cui sono seduti. */
-function passOrder(players) {
-  return (players || []).filter(p => !p.isDead).map(p => p.id);
-}
-
 /* ---------- Statistiche delle partite ---------- */
 const STATS_LIMIT = 300;
 const WINNER_TYPES = ['village', 'wolves', 'solo'];
@@ -1450,6 +1439,17 @@ function deckKey(deckMap) {
     .join(',');
 }
 
+/** Mazzo da una chiave delle statistiche ("lupo:2,veggente:1" → { lupo: 2, veggente: 1 }). */
+function parseDeckKey(key) {
+  const deck = {};
+  String(key || '').split(',').forEach(part => {
+    const [id, qty] = part.split(':');
+    const n = parseInt(qty, 10);
+    if (id && n > 0) deck[id] = (deck[id] || 0) + n;
+  });
+  return deck;
+}
+
 /** Riga delle statistiche per una partita finita (win = risultato di evaluateVictory). */
 function buildMatchRecord(match, win, nowMs) {
   const solo = win.type === 'solo' && win.playerId ? (match.players || []).find(p => p.id === win.playerId) : null;
@@ -1458,7 +1458,6 @@ function buildMatchRecord(match, win, nowMs) {
     date: nowMs,
     deckKey: deckKey(match.initialDeckMap),
     players: (match.players || []).length,
-    mode: match.mode === 'auto' ? 'auto' : 'narrator',
     winner: win.type,
     soloRoleId: solo ? solo.roleId : '',
     turns: Number(match.turn) || 1
@@ -1493,11 +1492,10 @@ function sanitizeMatchRecords(list) {
     .map(r => ({
       id: r.id.slice(0, 40),
       date: Number(r.date) || 0,
-      deckKey: cleanText(r.deckKey, 600),
+      deckKey: cleanText(deckKey(replaceRolesInDeck(parseDeckKey(r.deckKey))), 600),
       players: Math.max(0, parseInt(r.players, 10) || 0),
-      mode: r.mode === 'auto' ? 'auto' : 'narrator',
       winner: r.winner,
-      soloRoleId: cleanText(r.soloRoleId, 40),
+      soloRoleId: cleanText(replacementRoleId(cleanText(r.soloRoleId, 40)), 40),
       turns: Math.max(1, parseInt(r.turns, 10) || 1)
     }))
     .slice(0, STATS_LIMIT);
@@ -1506,7 +1504,7 @@ function sanitizeMatchRecords(list) {
 /* ---------- Backup ---------- */
 const BACKUP_FORMAT = 'lupus-backup';
 const BACKUP_VERSION = 1;
-const BACKUP_BOOL_SETTINGS = ['ghostRule', 'autoResolve', 'enforceRules', 'revealDead', 'deckAnnounced', 'surpriseEvents', 'voiceOn', 'soundsOn'];
+const BACKUP_BOOL_SETTINGS = ['ghostRule', 'autoResolve', 'enforceRules', 'revealDead', 'deckAnnounced', 'surpriseEvents', 'soundsOn'];
 
 /** Nome del file di backup, es. lupus-backup-2026-11-07.json */
 function backupFileName(date) {
@@ -1539,7 +1537,6 @@ function sanitizeBackupSettings(obj) {
   BACKUP_BOOL_SETTINGS.forEach(k => { if (typeof src[k] === 'boolean') out[k] = src[k]; });
   if (TIE_RULE_KEYS.includes(src.tieRule)) out.tieRule = src.tieRule;
   if (src.narratorLevel === 'beginner' || src.narratorLevel === 'expert') out.narratorLevel = src.narratorLevel;
-  if (src.playMode === 'narrator' || src.playMode === 'auto') out.playMode = src.playMode;
   if (src.activeSetupTab === 'presets' || src.activeSetupTab === 'custom') out.activeSetupTab = src.activeSetupTab;
   const seconds = Number(src.dayTimerSeconds);
   if (seconds >= 30 && seconds <= 1200) out.dayTimerSeconds = Math.round(seconds);

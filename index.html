@@ -2272,33 +2272,7 @@
       align-self: flex-start;
     }
 
-    /* ---------- 1.6: frasi da leggere, consigli, eventi, livello del Narratore ---------- */
-    .guide-phrase {
-      position: relative;
-      padding-right: 52px;
-    }
-
-    .phrase-say {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      border: 1px solid rgba(var(--rgb-moon), 0.35);
-      background: rgba(var(--rgb-moon), 0.08);
-      font-size: 0.95rem;
-      font-style: normal;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .phrase-say:active {
-      background: rgba(var(--rgb-moon), 0.25);
-    }
-
+    /* ---------- 1.6: consigli, eventi, livello del Narratore ---------- */
     .guide-tip {
       background: rgba(var(--rgb-sage), 0.07);
       border: 1px dashed rgba(var(--rgb-sage), 0.5);
@@ -2349,8 +2323,7 @@
       gap: 8px;
     }
 
-    .level-choice,
-    .mode-choice {
+    .level-choice {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
@@ -2371,20 +2344,17 @@
       font-size: clamp(0.88rem, 4vw, 1rem);
     }
 
-    .level-choice span,
-    .mode-choice span {
+    .level-choice span {
       font-size: 0.8rem;
       color: var(--mist);
     }
 
-    .level-choice.active,
-    .mode-choice.active {
+    .level-choice.active {
       border-color: var(--moon);
       background: rgba(var(--rgb-moon), 0.1);
     }
 
-    .level-choice.active strong,
-    .mode-choice.active strong {
+    .level-choice.active strong {
       color: var(--moon);
     }
 
@@ -2475,25 +2445,6 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-
-    .mode-switch {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .mode-choice {
-      width: 100%;
-    }
-
-    .mode-choice span {
-      font-size: 0.86rem;
-    }
-
-    /* Senza Narratore: niente morti manuali e niente livello del Narratore */
-    .play-auto .narrator-only {
-      display: none;
     }
 
     @media (max-width: 359px) {
@@ -2724,57 +2675,6 @@
       position: relative;
     }
 
-    /* ---------- 1.7: partita senza Narratore ---------- */
-    #screenNarrator.mode-auto .narrator-tabs,
-    #screenNarrator.mode-auto #narratorPlayersPanel,
-    #screenNarrator.mode-auto .alive-counters,
-    #screenNarrator.mode-auto .guide-tip,
-    #screenNarrator.mode-auto .guide-note {
-      display: none !important;
-    }
-
-    .pass-cover {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-      padding: 28px 8px;
-      text-align: center;
-    }
-
-    .pass-cover-name {
-      font-family: var(--font-tale);
-      font-weight: 700;
-      font-size: clamp(1.8rem, 9vw, 2.4rem);
-      color: var(--parchment-strong);
-      overflow-wrap: anywhere;
-    }
-
-    .pass-role {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 14px;
-      border-radius: var(--radius-md);
-      background: var(--ink-deep);
-      border: 1.5px solid var(--faction-color, var(--line-strong));
-    }
-
-    .pass-role > span:last-child {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .pass-role-icon {
-      font-size: 2rem;
-    }
-
-    .pass-yes-no {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
     /* ---------- 1.8: votazione a tocchi ---------- */
     .vote-picker {
       display: flex;
@@ -2954,7 +2854,7 @@
         <div class="card-header">
           <div>
             <div class="card-title"><span>👥 Giocatori al tavolo (<span id="playerCountLabel">0</span>)</span></div>
-            <div id="playersSubtitle" class="card-subtitle">Chi riceve un ruolo • Minimo 5 giocatori</div>
+            <div class="card-subtitle">Chi riceve un ruolo • Minimo 5 giocatori</div>
           </div>
           <button class="btn btn-sm btn-danger" id="btnClearPlayers" onclick="confirmClearPlayers()" style="display:none;">
             Svuota
@@ -3029,21 +2929,6 @@
       </div>
 
       <div id="setupPane3" class="setup-pane">
-      <!-- Come giocate: con o senza Narratore -->
-      <div class="card">
-        <div class="card-title">🎭 Come giocate?</div>
-        <div class="mode-switch" role="group" aria-label="Come giocate">
-          <button class="mode-choice" data-mode="narrator" onclick="setPlayMode('narrator')">
-            <strong>📖 Con il Narratore</strong>
-            <span>Una persona guida la partita con il telefono e non riceve un ruolo.</span>
-          </button>
-          <button class="mode-choice" data-mode="auto" onclick="setPlayMode('auto')">
-            <strong>🤝 Senza Narratore</strong>
-            <span>Giocano tutti. Di notte il telefono passa di mano in mano e ognuno fa la sua mossa in segreto.</span>
-          </button>
-        </div>
-        <div id="seatOrderHint" class="guide-info" style="display: none;"></div>
-      </div>
 
       <!-- Regole e varianti della partita -->
       <div class="card">
@@ -3058,7 +2943,7 @@
           </label>
         </div>
 
-        <div class="switch-row narrator-only">
+        <div class="switch-row">
           <div class="switch-info">
             <div class="switch-title">🤖 Morti e vittorie automatiche</div>
             <div class="switch-desc">All'alba l'app segna da sola chi muore e controlla chi ha vinto. Spento: lo fai tu.</div>
@@ -3120,25 +3005,15 @@
 
       </div>
 
-      <!-- Il Narratore: livello, voce e suoni -->
+      <!-- Il Narratore: livello e suoni -->
       <div class="card">
         <div>
           <div class="card-title">🎙️ Il Narratore</div>
           <div class="card-subtitle">Valgono per tutte le partite.</div>
         </div>
-        <div class="level-switch narrator-only" role="group" aria-label="Livello del Narratore">
+        <div class="level-switch" role="group" aria-label="Livello del Narratore">
           <button class="level-choice" data-level="beginner" onclick="setNarratorLevel('beginner')"><strong>🎓 Principiante</strong><span>consigli a ogni passo</span></button>
           <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale, va avanti da solo</span></button>
-        </div>
-        <div class="switch-row">
-          <div class="switch-info">
-            <div class="switch-title">🗣️ Voce del Narratore</div>
-            <div class="switch-desc">Il telefono legge le frasi ad alta voce. Con 🔊 accanto a una frase la fai leggere quando vuoi.</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="toggleVoice" onchange="onNarratorPrefToggle('voiceOn', this.checked)">
-            <span class="slider"></span>
-          </label>
         </div>
         <div class="switch-row">
           <div class="switch-info">
@@ -3146,7 +3021,7 @@
             <div class="switch-desc">Gufo quando cala la notte, ululato dei lupi, gallo all'alba, campanella per il voto.</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="toggleSounds" onchange="onNarratorPrefToggle('soundsOn', this.checked)">
+            <input type="checkbox" id="toggleSounds" onchange="onSoundsToggle(this.checked)">
             <span class="slider"></span>
           </label>
         </div>
@@ -3408,7 +3283,7 @@
         </label>
       </div>
 
-      <div class="switch-row narrator-only" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+      <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
         <div class="switch-info">
           <div class="switch-title">🤖 Morti e vittorie automatiche</div>
           <div class="switch-desc">All'alba l'app segna da sola chi muore e controlla chi ha vinto. Spento: lo fai tu.</div>
@@ -3458,21 +3333,10 @@
       </div>
 
       <div class="card-title" style="font-size: 1.05rem;">🎙️ Il Narratore</div>
-      <div class="level-switch narrator-only" role="group" aria-label="Livello del Narratore">
+      <div class="level-switch" role="group" aria-label="Livello del Narratore">
         <button class="level-choice" data-level="beginner" onclick="setNarratorLevel('beginner')"><strong>🎓 Principiante</strong><span>consigli a ogni passo</span></button>
         <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale, va avanti da solo</span></button>
       </div>
-
-      <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
-          <div class="switch-info">
-            <div class="switch-title">🗣️ Voce del Narratore</div>
-            <div class="switch-desc">Il telefono legge le frasi ad alta voce.</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="toggleVoiceInGame" onchange="onNarratorPrefToggle('voiceOn', this.checked)">
-            <span class="slider"></span>
-          </label>
-        </div>
 
       <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
           <div class="switch-info">
@@ -3480,7 +3344,7 @@
             <div class="switch-desc">Gufo, ululato, gallo all'alba, campanella per il voto.</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="toggleSoundsInGame" onchange="onNarratorPrefToggle('soundsOn', this.checked)">
+            <input type="checkbox" id="toggleSoundsInGame" onchange="onSoundsToggle(this.checked)">
             <span class="slider"></span>
           </label>
         </div>
@@ -3625,7 +3489,7 @@
       <div class="switch-row">
         <div class="switch-info">
           <div class="switch-title">👥 Sempre in coppia</div>
-          <div class="switch-desc">Aggiunge/rimuove a blocchi di 2 (come i Gemelli)</div>
+          <div class="switch-desc">Aggiunge/rimuove a blocchi di 2 (come i Massoni)</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="rfIsPair">
@@ -3720,14 +3584,14 @@
         <ol class="welcome-list">
           <li><strong>Giocatori:</strong> scrivi i nomi di chi gioca.</li>
           <li><strong>Mazzo:</strong> scegli un preset, sono già equilibrati.</li>
-          <li><strong>Opzioni:</strong> con o senza Narratore, varianti, voce. Poi tocca Distribuisci.</li>
+          <li><strong>Opzioni:</strong> regole, varianti e suoni. Poi tocca Distribuisci.</li>
         </ol>
       </div>
       <div class="welcome-slide" data-slide="2">
         <div class="welcome-art" aria-hidden="true">📱🤫</div>
         <div class="welcome-title">Passa il telefono e gioca</div>
-        <p>Ognuno guarda il suo ruolo tenendo premuto il dito. Poi il Narratore segue la guida: legge la frase, tocca il giocatore indicato, Avanti.</p>
-        <p>Nessuno vuole fare il Narratore? Scegli <strong>Senza Narratore</strong>: di notte il telefono passa di mano in mano.</p>
+        <p>Ognuno guarda il suo ruolo tenendo premuto il dito. Poi il telefono torna al Narratore, che segue la guida: legge la frase, tocca il giocatore indicato, Avanti.</p>
+        <p>Morti, voti e vittorie li conta l'app.</p>
       </div>
       <div class="welcome-dots" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="welcome-actions">

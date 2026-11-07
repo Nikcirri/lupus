@@ -58,7 +58,7 @@ def main():
         check(page.locator("#modalWelcome").is_visible() and "Benvenuto in Lupus" in page.locator("#modalWelcome").inner_text(), "al primo avvio compare il benvenuto")
         page.click("#btnWelcomeNext")
         page.click("#btnWelcomeNext")
-        check("Iniziamo" in page.locator("#btnWelcomeNext").inner_text() and "Senza Narratore" in page.locator("#modalWelcome").inner_text(), "tre schermate di benvenuto")
+        check("Iniziamo" in page.locator("#btnWelcomeNext").inner_text() and "Senza Narratore" not in page.locator("#modalWelcome").inner_text(), "tre schermate di benvenuto")
         page.click("#btnWelcomeNext")
         check(page.locator("#modalWelcome").is_hidden(), "benvenuto chiuso")
 
@@ -102,7 +102,7 @@ def main():
             check(ok, f"preset da {n} giocatori validi")
 
         page.click("#btnSetupNext")
-        check(page.locator("#setupPane3").is_visible() and page.locator(".mode-choice.active").get_attribute("data-mode") == "narrator", "tappa 3: opzioni, con il Narratore di partenza")
+        check(page.locator("#setupPane3").is_visible() and page.locator(".mode-choice").count() == 0, "tappa 3: opzioni (si gioca sempre con il Narratore)")
         check("Distribuisci" in page.locator("#btnSetupNext").inner_text(), "ultimo pulsante: Distribuisci")
         check(page.evaluate("handleAndroidBack()") is True and page.locator("#setupPane2").is_visible(), "Indietro torna alla tappa prima")
         page.click("#setupStepper .setup-step[data-step='3']")
@@ -383,10 +383,10 @@ def main():
         page.click("#modalGameMenu button:has-text('Torna al Setup')")
         check(page.locator("#screenSetup").is_visible(), "torna al setup")
 
-        print("Narratore: livello, voce e suoni")
+        print("Narratore: livello e suoni")
         page.click("#setupStepper .setup-step[data-step='3']")
         check(page.locator(".level-choice.active").first.get_attribute("data-level") == "beginner", "Narratore principiante di partenza")
-        check(not page.locator("#toggleVoice").is_checked() and page.locator("#toggleSounds").is_checked(), "voce spenta e suoni accesi di partenza")
+        check(page.locator("#toggleVoice").count() == 0 and page.locator("#toggleSounds").is_checked(), "niente voce, suoni accesi di partenza")
         durations = page.evaluate("LupusSounds.names.map(n => LupusSounds.play(n))")
         check(len(durations) == 6 and all(d > 0 for d in durations), "tutti i suoni si possono suonare")
         page.click("#screenSetup summary:has-text('Varianti')")
@@ -413,10 +413,9 @@ def main():
         new_match({"lupo": 1, "veggente": 1, "sindaco": 1, "contadino": 3}, ["lupo", "veggente", "sindaco", "contadino", "contadino", "contadino"])
         check("In questa partita ci sono: Lupo Mannaro, Veggente, Sindaco e Contadino (3)" in guide(), "notte 1: si annunciano i ruoli in gioco")
         check(page.locator("#guideStep .guide-tip").count() >= 1 and page.locator("#guideStep .guide-tip").first.is_visible(), "il principiante vede i consigli")
-        check(page.locator("#guideStep .phrase-say").count() >= 2, "ogni frase ha il pulsante 🔊")
-        page.locator("#guideStep .phrase-say").first.click()
+        check(page.locator("#guideStep .guide-phrase").count() >= 2 and page.locator("#guideStep .phrase-say").count() == 0, "frasi da leggere, senza il pulsante 🔊")
         nxt()
-        check(page.evaluate("lastNarratedKey") == "1|night|role:veggente", "la voce segue i passi della guida")
+        check(page.evaluate("lastSoundKey") == "1|night|role:veggente", "i suoni seguono i passi della guida")
         page.evaluate("guideJump('wolves')")
         target(names[3]).click()
         page.click("#guideBottomBar button:has-text('Avanti')")
@@ -472,7 +471,7 @@ def main():
         page.click("#screenSetup .level-choice[data-level='expert']")
         page.click("text=Riprendi Partita in Corso")
         check(page.locator("#guideStep .guide-tip").count() >= 1 and not page.locator("#guideStep .guide-tip").first.is_visible(), "l'esperto non vede i consigli")
-        check(page.evaluate("lastNarratedKey") == "2|night|intro", "ripresa della partita senza rileggere il passo")
+        check(page.evaluate("lastSoundKey") == "2|night|intro", "ripresa della partita senza risuonare il passo")
         page.click("#btnSettingsTop")
         check(page.locator("#modalGameMenu .level-choice.active").get_attribute("data-level") == "expert", "livello anche nel menu ⚙️")
         page.evaluate("closeGameMenuModal(); setSurpriseEvent(null); guideJump('wolves')")
@@ -519,14 +518,14 @@ def main():
         page.evaluate("closeInfoModal()")
         page.evaluate("onMatchOptionToggle('surpriseEvents', false)")
 
-        print("Senza Narratore")
+        print("Opzioni e ordine dei giocatori")
         page.evaluate("goSetupStep(3)")
-        page.click("#screenSetup .mode-choice[data-mode='auto']")
-        check(page.locator("label:has(#toggleAutoResolve)").is_hidden() and page.locator("#screenSetup .level-switch").is_hidden(), "senza Narratore: niente opzioni da Narratore")
-        check("Senza Narratore" in page.locator("#stickyDeckStatus").inner_text(), "la barra in basso lo ricorda")
-        check(page.locator("#seatOrderHint").is_visible() and "Anna → Bruno" in page.locator("#seatOrderHint").inner_text(), "si spiega l'ordine dei posti")
+        check(page.locator("#screenSetup .mode-choice").count() == 0 and page.locator("#screenSetup .level-switch").is_visible(), "niente più scelta con o senza Narratore")
+        check("Narratore principiante" in page.locator("#stickyDeckStatus").inner_text(), "la barra in basso ricorda il livello del Narratore")
+        page.click("#screenSetup .level-choice[data-level='expert']")
+        check("Narratore esperto" in page.locator("#stickyDeckStatus").inner_text(), "e si aggiorna quando cambia")
+        page.click("#screenSetup .level-choice[data-level='beginner']")
         page.click("#setupStepper .setup-step[data-step='1']")
-        check("ordine in cui siete seduti" in page.locator("#playersSubtitle").inner_text(), "i giocatori vanno scritti in ordine di posto")
         handle = page.locator("#playerChipsList .player-chip").nth(2).locator(".drag-handle").bounding_box()
         first = page.locator("#playerChipsList .player-chip").first.bounding_box()
         page.mouse.move(handle["x"] + handle["width"] / 2, handle["y"] + handle["height"] / 2)
@@ -534,61 +533,14 @@ def main():
         for k in range(1, 9):
             page.mouse.move(handle["x"] + handle["width"] / 2, handle["y"] + handle["height"] / 2 + (first["y"] + 4 - handle["y"] - handle["height"] / 2) * k / 8)
         page.mouse.up()
-        check(page.evaluate("setupPlayers[0]") == "Carla", "trascinando ☰ si cambia l'ordine dei posti")
+        check(page.evaluate("setupPlayers[0]") == "Carla", "trascinando ☰ si cambia l'ordine dei giocatori")
         page.click("#undoToast .undo-toast-btn")
-        check(page.evaluate("setupPlayers[0]") == "Anna", "Annulla rimette i posti come prima")
-        page.evaluate("goSetupStep(3)")
-        new_match({"lupo": 2, "strega": 1, "veggente": 1, "sindaco": 1, "contadino": 1}, ["lupo", "strega", "lupo", "veggente", "sindaco", "contadino"])
-        check(page.locator(".narrator-tabs").is_hidden() and page.locator(".alive-counters").is_hidden(), "niente scheda Giocatori né contatori dei lupi")
-        check("il telefono passerà a tutti" in guide(), "notte: si spiega come passare il telefono")
-        page.click("#btnSettingsTop")
-        page.click("#modalGameMenu button:has-text('Riepilogo')")
-        check(page.locator("#modalSummary").is_hidden(), "di notte, senza Narratore, il riepilogo dei ruoli è bloccato")
-        page.evaluate("closeGameMenuModal()")
-        page.click("#guideBottomBar button")
-        def secret_turn(who, action):
-            check(who in guide() and "Passa il telefono a" in guide(), f"il telefono va a {who}")
-            page.click("#guideBottomBar button")
-            action()
-            page.evaluate("passActionStart = Date.now() - 7000; updatePassDoneButton()")
-            done = page.locator("#btnPassDone")
-            check(done.is_enabled(), f"{who} ha finito la sua mossa")
-            done.click()
-        def wolf1():
-            check("Il tuo branco" in guide() and page.locator("#guideBottomBar button").is_disabled(), "il lupo vede il branco e deve scegliere")
-            target(names[5]).click()
-            check(page.locator("#btnPassDone").is_disabled() and "Fatto tra" in page.locator("#btnPassDone").inner_text(), "tempo minimo uguale per tutti prima di passare il telefono")
-        def witch():
-            page.click("#guideStep button:has-text('Sì, salvala')")
-            page.click("#guideStep button:has-text('Nessuno')")
-        def wolf2():
-            check(f"{names[0]} → {names[5]}" in guide(), "il secondo lupo vede la scelta del primo")
-            target(names[5]).click()
-        def seer():
-            target(names[0]).click()
-            check("è un lupo" in guide(), "il Veggente ha subito la risposta")
-        def decoy():
-            check("Tocca un nome qualsiasi" in guide(), "chi non ha poteri fa una finta mossa")
-            page.locator("#guideStep .target-btn").first.click()
-        for who, action in zip(names, [wolf1, witch, wolf2, seer, decoy, decoy]):
-            secret_turn(who, action)
-        check("Fine della notte" in guide(), "dopo l'ultimo giocatore la notte finisce")
-        page.click("#guideBottomBar button")
-        check(page.evaluate("activeMatch.phase") == "day" and page.evaluate("activeMatch.players.every(p => !p.isDead)"), "la Strega ha salvato la vittima dei lupi")
-        check("Voto doppio" not in guide(), "di giorno nessuna informazione segreta")
-        page.evaluate("guideJump('vote')")
-        page.click("#guideStep button:has-text('Apri la votazione')")
-        check(page.locator("#voteVotersList").inner_text().count("vale 2") == 0, "nella votazione non si vede chi vale doppio")
-        page.evaluate("closeVoteModal()")
-        page.click("#btnSettingsTop")
-        page.click("#modalGameMenu button:has-text('Torna al Setup')")
-        page.evaluate("goSetupStep(3)")
-        page.click("#screenSetup .mode-choice[data-mode='narrator']")
+        check(page.evaluate("setupPlayers[0]") == "Anna", "Annulla rimette l'ordine come prima")
 
         print("Ruoli e informazioni")
         page.click("#setupStepper .setup-step[data-step='2']")
         page.click("text=Gestisci i ruoli")
-        check(page.evaluate("rolesDB.length") == 18, "18 ruoli base")
+        check(page.evaluate("rolesDB.length") == 17, "17 ruoli base")
         order = lambda: page.evaluate("getNightOrderRoles(rolesDB).map(r => r.id)")
         first = order()
         check(page.locator("#nightOrderList .night-order-item").count() == len(first), "elenco dell'ordine di chiamata")
@@ -718,6 +670,7 @@ def main():
             """() => {
               const old = DEFAULT_ROLES.filter(r => ORIGINAL_DEFAULT_ROLE_IDS.includes(r.id)).map(r => {
                 const c = { ...r }; ['wakesWithWolves', 'deathAction', 'victory', 'traits', 'markText'].forEach(k => delete c[k]); return c; });
+              old.push({ id: 'gemelli', name: 'Gemelli', icon: '👥', faction: 'Villaggio', whatYouDo: 'Vi riconoscete.', howYouWin: 'Col villaggio.', wakeTiming: 'solo_notte_1', priority: 1, narratorPhrase: '', narratorNote: '', isPair: true });
               localStorage.setItem('lupus_narratore_roles_v1', JSON.stringify(old));
               const st = JSON.parse(localStorage.getItem('lupus_narratore_settings_v1'));
               st.selectedPresetCode = 'a'; delete st.knownDefaultRoleIds;
@@ -726,13 +679,51 @@ def main():
         )
         page.reload()
         page.wait_for_load_state("networkidle")
-        check(page.evaluate("rolesDB.length") == 18 and page.evaluate("rolesDB.some(r => r.id === 'strega')"), "i 5 ruoli nuovi aggiunti a chi aveva la 1.4")
+        check(page.evaluate("rolesDB.length") == 17 and page.evaluate("rolesDB.some(r => r.id === 'strega') && rolesDB.some(r => r.id === 'massoni')"), "i 5 ruoli nuovi aggiunti a chi aveva la 1.4")
+        check(page.evaluate("!rolesDB.some(r => r.id === 'gemelli')"), "i Gemelli della 1.4 non ci sono più")
         check(page.evaluate("roleTraits(findRoleOrNull('sindaco')).doubleVote && findRoleOrNull('sindaco').traits.doubleVote"), "i ruoli vecchi ricevono le capacità")
         check(page.evaluate("appSettings.selectedPresetCode") != "a", "codice di preset vecchio dimenticato")
         page.evaluate("rolesDB = rolesDB.filter(r => r.id !== 'gufo'); saveRolesToStorage()")
         page.reload()
         page.wait_for_load_state("networkidle")
-        check(page.evaluate("rolesDB.length") == 17, "un ruolo nuovo eliminato non torna più")
+        check(page.evaluate("rolesDB.length") == 16, "un ruolo nuovo eliminato non torna più")
+
+        print("Aggiornamento dalla versione 1.8")
+        page.evaluate(
+            """() => {
+              setupPlayers = ['Anna', 'Bruno', 'Carla', 'Dario', 'Elena'];
+              appSettings.selectedDeck = { lupo: 1, massoni: 2, contadino: 2 };
+              startDistributionPhase(); beginNarratorMatch();
+              const roles = JSON.parse(localStorage.getItem('lupus_narratore_roles_v1'));
+              roles.push({ ...roles.find(r => r.id === 'massoni'), id: 'gemelli', name: 'Gemelli', icon: '👥' });
+              localStorage.setItem('lupus_narratore_roles_v1', JSON.stringify(roles));
+              const st = JSON.parse(localStorage.getItem('lupus_narratore_settings_v1'));
+              Object.assign(st, { playMode: 'auto', voiceOn: true, selectedDeck: { lupo: 1, gemelli: 2, contadino: 2 }, selectedPresetCode: null });
+              localStorage.setItem('lupus_narratore_settings_v1', JSON.stringify(st));
+              const m = JSON.parse(localStorage.getItem('lupus_narratore_match_v1'));
+              m.mode = 'auto';
+              m.pass = { turn: m.turn, order: [], index: 0, stage: 'intro', votes: {}, decoy: {} };
+              const twin = m.players.find(p => p.roleId === 'massoni');
+              twin.roleId = 'gemelli'; twin.originalRoleId = 'gemelli';
+              m.initialDeckMap = { lupo: 1, massoni: 1, gemelli: 1, contadino: 2 };
+              localStorage.setItem('lupus_narratore_match_v1', JSON.stringify(m));
+              const stats = JSON.parse(localStorage.getItem('lupus_narratore_stats_v1') || '[]');
+              stats.unshift({ id: 'vecchia', date: 1, deckKey: 'contadino:2,gemelli:2,lupo:1', players: 5, mode: 'auto', winner: 'wolves', soloRoleId: '', turns: 2 });
+              localStorage.setItem('lupus_narratore_stats_v1', JSON.stringify(stats));
+            }"""
+        )
+        page.reload()
+        page.wait_for_load_state("networkidle")
+        check(page.evaluate("!rolesDB.some(r => r.id === 'gemelli') && rolesDB.some(r => r.id === 'massoni')"), "Gemelli tolti, restano i Massoni")
+        check(page.evaluate("appSettings.selectedDeck.massoni === 2 && !('gemelli' in appSettings.selectedDeck)"), "nel mazzo scelto i Gemelli diventano Massoni")
+        check(page.evaluate("!('playMode' in appSettings) && !('voiceOn' in appSettings)"), "impostazioni tolte dimenticate")
+        check(page.evaluate("activeMatch.players.filter(p => p.roleId === 'massoni').length === 2 && !activeMatch.mode && !activeMatch.pass"), "partita in corso: Massoni al posto dei Gemelli, si continua con il Narratore")
+        check(page.evaluate("activeMatch.initialDeckMap.massoni === 2 && !('gemelli' in activeMatch.initialDeckMap)"), "anche il mazzo della partita")
+        check(page.evaluate("loadStats().find(r => r.id === 'vecchia').deckKey") == "contadino:2,lupo:1,massoni:2", "statistiche: i mazzi con i Gemelli contano come Massoni")
+        page.click("text=Riprendi Partita in Corso")
+        check(page.locator("#screenNarrator").is_visible() and page.evaluate("getGuidePlan().some(st => st.key === 'role:massoni')"), "la partita ripresa chiama i Massoni")
+        page.click("#btnSettingsTop")
+        page.click("#modalGameMenu button:has-text('Torna al Setup')")
 
         print("Novità dopo l'aggiornamento")
         page.evaluate("localStorage.setItem('lupus_narratore_seen_version_v1', '1.0.0')")

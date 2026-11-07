@@ -16,6 +16,13 @@ function screenshot(name) {
   writeFileSync(join(OUT, name), execSync('adb exec-out screencap -p'));
 }
 
+/** Finestra in primo piano sul telefono (per capire se l'app è davanti o no). */
+function focusedWindow() {
+  return adb('shell dumpsys window').split('\n').find(l => l.includes('mCurrentFocus')) || '';
+}
+
+const appInFront = () => focusedWindow().includes(PKG);
+
 function check(ok, message, detail = '') {
   if (ok) {
     console.log(`  ok - ${message}`);
@@ -118,19 +125,11 @@ async function main() {
   console.log(`Pagina trovata: ${page.url}`);
   const dt = new DevTools(page.webSocketDebuggerUrl);
   await dt.open();
-  await dt.send('Runtime.enable');
-  await dt.send('Page.enable');
+  const ready = "return document.readyState === 'complete' && typeof window.LupusApp === 'object' && typeof setupNext === 'function';";
+  await waitFor(dt, ready, "l'app si carica");
 
-  // Si ricarica la pagina con il controllo degli errori già acceso, per vedere anche quelli dell'avvio.
-  await dt.send('Page.reload', { ignoreCache: true });
-  await sleep(1500);
-  await waitFor(dt, "return document.readyState === 'complete' && typeof window.LupusApp === 'object' && typeof setupNext === 'function';", "l'app si carica");
-  await sleep(2500);
-
-  console.log("Avvio");
-  check(await dt.attempt('return window.LupusApp.isNative;') === true, "gira come app Android (Capacitor attivo)");
-  const version = await dt.attempt('return window.LupusApp.version;');
-  check(typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version), `versione nell'app: ${version}`);
+  console.log('Primo avvio');
+  check(appInFront(), "l'app è in primo piano", focusedWindow().trim());
   const welcome = await dt.attempt("return document.getElementById('modalWelcome').classList.contains('active');");
   check(welcome === true, 'al primo avvio compare il benvenuto');
   screenshot('1-benvenuto.png');
@@ -138,6 +137,21 @@ async function main() {
   console.log('Tasto Indietro (plugin App)');
   adb('shell input keyevent KEYCODE_BACK');
   await waitFor(dt, "return !document.getElementById('modalWelcome').classList.contains('active');", 'Indietro chiude il benvenuto', 10);
+  await sleep(500);
+  check(appInFront(), "dopo Indietro l'app resta aperta", focusedWindow().trim());
+
+  // Si ricarica la pagina con il controllo degli errori già acceso, per vedere anche quelli dell'avvio.
+  await dt.send('Runtime.enable');
+  await dt.send('Page.enable');
+  await dt.send('Page.reload', { ignoreCache: true });
+  await sleep(1500);
+  await waitFor(dt, ready, "l'app si ricarica");
+  await sleep(2500);
+
+  console.log('Avvio');
+  check(await dt.attempt('return window.LupusApp.isNative;') === true, 'gira come app Android (Capacitor attivo)');
+  const version = await dt.attempt('return window.LupusApp.version;');
+  check(typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version), `versione nell'app: ${version}`);
 
   console.log('Funzioni del telefono');
   const info = await dt.attempt('return await Capacitor.Plugins.App.getInfo();');
@@ -156,7 +170,7 @@ async function main() {
   let focus = '';
   for (let i = 0; i < 20; i++) {
     await sleep(500);
-    focus = adb('shell dumpsys window').split('\n').find(l => l.includes('mCurrentFocus')) || '';
+    focus = focusedWindow();
     if (/chooser|resolver/i.test(focus)) break;
   }
   check(/chooser|resolver/i.test(focus), 'si apre la finestra Condividi del telefono', focus.trim());
@@ -166,6 +180,8 @@ async function main() {
   await waitFor(dt, 'return window.__shareResult !== null;', 'Condividi chiusa: la promessa finisce', 15);
   const shareResult = await dt.attempt('return window.__shareResult;');
   check(shareResult === 'false' || shareResult === 'true', 'backup: chiudere Condividi non è un errore', shareResult);
+  await sleep(500);
+  check(appInFront(), 'chiusa Condividi si torna all\'app', focusedWindow().trim());
 
   console.log('Una partita, come farebbe una persona');
   await dt.run("const input = document.getElementById('playerNameInput'); input.value = 'Anna, Bruno, Carla, Dario, Elena, Fabio'; addPlayerFromInput(); return true;");

@@ -8,7 +8,7 @@ const code = readFileSync(new URL('../public/rules.js', import.meta.url), 'utf8'
 const ctx = vm.createContext({ TextEncoder, TextDecoder, btoa, atob });
 vm.runInContext(
   code +
-    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, TIE_RULE_KEYS, tieOutcome, roleRevealLine, deckAnnouncement, SURPRISE_EVENTS, findSurpriseEvent, eventEffects, drawSurpriseEvent, pickSurpriseEvent, splitPhrase, speechText, secondTargetKey, wolvesTargetIds, ANY_WOLF_VICTIM, pickFromVotes, passOrder, backupFileName, buildBackup, parseBackup, sanitizeBackupSettings, roleMarkEffect, markVoteBonus, VOTE_ABSTAIN, deckKey, buildMatchRecord, upsertMatchRecord, removeMatchRecord, summarizeRecords, refreshOutdatedRoleTexts, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
+    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, TIE_RULE_KEYS, tieOutcome, roleRevealLine, deckAnnouncement, SURPRISE_EVENTS, findSurpriseEvent, eventEffects, drawSurpriseEvent, pickSurpriseEvent, secondTargetKey, wolvesTargetIds, backupFileName, buildBackup, parseBackup, sanitizeBackupSettings, roleMarkEffect, markVoteBonus, VOTE_ABSTAIN, deckKey, buildMatchRecord, upsertMatchRecord, removeMatchRecord, summarizeRecords, sanitizeMatchRecords, parseDeckKey, refreshOutdatedRoleTexts, isReplacedRoleId, replacementRoleId, removeReplacedRoles, replaceRolesInDeck, replaceRolesInMatch, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
   ctx
 );
 const R = ctx.R;
@@ -18,10 +18,11 @@ function player(id, roleId, extra = {}) {
   return { id, name: id, roleId, originalRoleId: roleId, isDead: false, isGhost: false, ...extra };
 }
 
-test('i 18 ruoli base hanno id unici e tutti i campi', () => {
-  assert.equal(R.DEFAULT_ROLES.length, 18);
+test('i 17 ruoli base hanno id unici e tutti i campi', () => {
+  assert.equal(R.DEFAULT_ROLES.length, 17);
   const ids = new Set(R.DEFAULT_ROLES.map(r => r.id));
-  assert.equal(ids.size, 18);
+  assert.equal(ids.size, 17);
+  assert.ok(!ids.has('gemelli'), 'i Gemelli non ci sono più: restano i Massoni');
   for (const id of ['strega', 'cacciatore', 'massoni', 'gufo', 'lupo_bianco']) assert.ok(ids.has(id), id);
   for (const r of R.DEFAULT_ROLES) assert.ok(R.VALID_WAKE_TIMINGS.includes(r.wakeTiming), `${r.id}.wakeTiming`);
   for (const r of R.DEFAULT_ROLES) {
@@ -50,7 +51,7 @@ test('controllo del mazzo: spiega cosa non va', () => {
   assert.match(R.getDeckProblems({}, 3, findRole)[0], /almeno 5 giocatori/);
   assert.match(R.getDeckProblems({ lupo: 1, contadino: 3 }, 5, findRole)[0], /Manca 1 ruolo|Mancano 1/);
   assert.match(R.getDeckProblems({ lupo: 1, contadino: 6 }, 5, findRole)[0], /di troppo/);
-  assert.ok(R.getDeckProblems({ lupo: 1, gemelli: 1, contadino: 3 }, 5, findRole).some(t => /coppie/.test(t)));
+  assert.ok(R.getDeckProblems({ lupo: 1, massoni: 1, contadino: 3 }, 5, findRole).some(t => /coppie/.test(t)));
   assert.ok(R.getDeckProblems({ contadino: 5 }, 5, findRole).some(t => /almeno un Lupo/.test(t)));
   assert.ok(R.getDeckProblems({ lupo: 3, contadino: 2 }, 5, findRole).some(t => /meno degli altri/.test(t)));
   assert.ok(R.getDeckProblems({ lupo: 1, sparito: 4 }, 5, findRole).some(t => /non esiste più/.test(t)));
@@ -223,9 +224,9 @@ test('i ruoli base hanno azione notturna e regole', () => {
 test('piano della notte: ordine, prima e seconda notte, ruoli assenti', () => {
   const players = [
     player('a', 'lupo'), player('b', 'lupo'), player('c', 'veggente'), player('d', 'guardia'),
-    player('e', 'gemelli'), player('f', 'gemelli'), player('g', 'medium'), player('h', 'copione'), player('i', 'contadino')
+    player('e', 'massoni'), player('f', 'massoni'), player('g', 'medium'), player('h', 'copione'), player('i', 'contadino')
   ];
-  assert.deepEqual(keys(plan(players, 1)), ['intro', 'role:gemelli', 'role:veggente', 'role:guardia', 'wolves', 'dawn']);
+  assert.deepEqual(keys(plan(players, 1)), ['intro', 'role:massoni', 'role:veggente', 'role:guardia', 'wolves', 'dawn']);
   assert.deepEqual(keys(plan(players, 2)), ['intro', 'role:veggente', 'role:medium', 'role:guardia', 'wolves', 'role:copione', 'dawn']);
   assert.deepEqual(keys(plan(players, 3)), ['intro', 'role:veggente', 'role:medium', 'role:guardia', 'wolves', 'dawn']);
   const wolves = plan(players, 1).find(st => st.key === 'wolves');
@@ -488,7 +489,7 @@ test('equilibrio del mazzo', () => {
 
 test('ordine di chiamata della notte', () => {
   const order = [...R.getNightOrderRoles(roles())].map(r => r.id);
-  assert.equal(order[0], 'gemelli');
+  assert.equal(order[0], 'massoni');
   assert.ok(!order.includes('contadino'));
   const moved = [...R.applyNightOrder(roles(), ['lupo', 'veggente'])];
   assert.equal(moved.find(r => r.id === 'lupo').priority, 1);
@@ -503,7 +504,7 @@ test('nuovi ruoli base aggiunti a chi aveva già l\'app', () => {
   const old = R.DEFAULT_ROLES.filter(r => R.ORIGINAL_DEFAULT_ROLE_IDS.includes(r.id)).map(r => ({ ...r }));
   const first = R.addNewDefaultRoles(old, null);
   assert.deepEqual([...first.added], ['strega', 'cacciatore', 'massoni', 'gufo', 'lupo_bianco']);
-  assert.equal(first.roles.length, 18);
+  assert.equal(first.roles.length, 17);
   // una volta sola: se l'utente ne elimina uno, non torna
   const afterDelete = first.roles.filter(r => r.id !== 'gufo');
   const second = R.addNewDefaultRoles(afterDelete, first.knownIds);
@@ -626,48 +627,27 @@ test('Eclissi e Nebbia', () => {
   assert.equal(R.resolveNight(players, plan(players, 1), { 'role:veggente': 'h' }, roles()).deaths.length, 1);
 });
 
-test('voce: frase divisa in chiamata e chiusura, testo pulito', () => {
-  const seer = R.splitPhrase(findRole('veggente').narratorPhrase);
-  assert.match(seer.open, /^«Si sveglia il Veggente.*\.\.\.$/);
-  assert.equal(seer.close, 'Il Veggente chiude gli occhi.»');
-  const witch = R.splitPhrase(findRole('strega').narratorPhrase);
-  assert.match(witch.open, /pozione della morte su qualcuno\? \.\.\.$/);
-  assert.equal(witch.close, 'La Strega chiude gli occhi.»');
-  assert.deepEqual({ ...R.splitPhrase('«Cala la notte sul villaggio.»') }, { open: '«Cala la notte sul villaggio.»', close: '' });
-  for (const r of R.DEFAULT_ROLES.filter(x => x.narratorPhrase)) assert.ok(R.splitPhrase(r.narratorPhrase).close, `${r.id}: manca la chiusura`);
-  assert.equal(R.speechText('«Il ruolo di Dario era: 🔮 Veggente.»'), 'Il ruolo di Dario era: Veggente.');
-  assert.equal(R.speechText('🧑‍🌾  Contadino'), 'Contadino');
-});
-
 test('cronologia: evento a sorpresa della notte', () => {
   const tl = R.buildTimeline([player('a', 'lupo'), player('c', 'contadino')], [{ turn: 2, eventId: 'luna_rossa', entries: [] }], findRole);
   assert.match(tl[0].lines[0], /🌕 Evento a sorpresa: Luna rossa/);
 });
 
-// ---------- 1.7: partita senza Narratore e backup ----------
-test('senza Narratore: scelta del branco dai voti segreti', () => {
-  assert.deepEqual([...R.pickFromVotes([['c'], ['d'], ['d']], 1)], ['d']);
-  // parità: vince chi è stato scelto per primo
-  assert.deepEqual([...R.pickFromVotes([['c'], ['d']], 1)], ['c']);
-  // "nessuno" non conta
-  assert.deepEqual([...R.pickFromVotes([[''], ['e']], 1)], ['e']);
-  assert.deepEqual([...R.pickFromVotes([[''], ['']], 1)], []);
-  // Luna rossa: due vittime
-  assert.deepEqual([...R.pickFromVotes([['c', 'd'], ['d', 'e']], 2)], ['d', 'c']);
-  assert.deepEqual([...R.passOrder([player('a', 'lupo'), player('b', 'contadino', { isDead: true }), player('c', 'veggente')])], ['a', 'c']);
-});
-
-test('Strega senza Narratore: salva la vittima dei lupi, chiunque sia', () => {
+// ---------- 1.7: backup ----------
+test('Strega: la pozione della vita salva solo la vittima dei lupi', () => {
   const players = [player('a', 'lupo'), player('s', 'strega'), player('c', 'contadino'), player('d', 'contadino'), player('e', 'contadino')];
   const steps = plan(players, 1);
   const save = R.witchSaveKey('role:strega');
-  const res = R.resolveNight(players, steps, { wolves: 'c', [save]: R.ANY_WOLF_VICTIM }, roles());
+  const res = R.resolveNight(players, steps, { wolves: 'c', [save]: 'c' }, roles());
   assert.equal(res.deaths.length, 0);
   assert.deepEqual([...res.saved].map(x => x.playerId), ['c']);
-  assert.deepEqual([...R.computePowerUsage(players, steps, { wolves: 'c', [save]: R.ANY_WOLF_VICTIM }, roles())].map(u => u.slot), ['witch-save']);
+  assert.deepEqual([...R.computePowerUsage(players, steps, { wolves: 'c', [save]: 'c' }, roles())].map(u => u.slot), ['witch-save']);
+  // pozione su chi non è stato attaccato: non salva nessuno e non si consuma
+  const wrong = R.resolveNight(players, steps, { wolves: 'c', [save]: 'd' }, roles());
+  assert.deepEqual([...wrong.deaths].map(x => x.playerId), ['c']);
+  assert.equal(R.computePowerUsage(players, steps, { wolves: 'c', [save]: 'd' }, roles()).length, 0);
   // senza vittima (Eclissi) la pozione non si consuma
   const eclipse = [...R.buildNightPlan(players, roles(), 1, {}, R.eventEffects(R.findSurpriseEvent('eclissi')))];
-  assert.equal(R.computePowerUsage(players, eclipse, { wolves: 'c', [save]: R.ANY_WOLF_VICTIM }, roles()).length, 0);
+  assert.equal(R.computePowerUsage(players, eclipse, { wolves: 'c', [save]: 'c' }, roles()).length, 0);
 });
 
 test('backup: andata e ritorno, dati ripuliti', () => {
@@ -680,13 +660,13 @@ test('backup: andata e ritorno, dati ripuliti', () => {
   const file = R.buildBackup(state, '2026-11-07T10:00:00.000Z', '1.7.0');
   const back = R.parseBackup(JSON.stringify(file));
   assert.equal(back.error, undefined);
-  assert.equal(back.data.roles.length, 19);
+  assert.equal(back.data.roles.length, 18);
   assert.equal(back.data.roles.find(r => r.id === 'strega').nightAction, 'witch');
   assert.equal(back.data.roles.find(r => r.id === 'custom_1').name, 'Mugnaio');
   assert.deepEqual([...back.data.players], ['Anna', 'Bruno']);
   assert.equal(back.data.settings.ghostRule, false);
   assert.equal(back.data.settings.tieRule, 'decider');
-  assert.equal(back.data.settings.playMode, 'auto');
+  assert.equal('playMode' in back.data.settings, false);
   assert.deepEqual({ ...back.data.settings.selectedDeck }, { lupo: 2, contadino: 3 });
   assert.equal('segreto' in back.data.settings, false);
   assert.equal('voiceOn' in back.data.settings, false);
@@ -730,10 +710,10 @@ test('votazione: chi si astiene ha votato, ma non dà voti', () => {
 test('statistiche delle partite', () => {
   assert.equal(R.deckKey({ veggente: 1, lupo: 2, contadino: 0 }), 'lupo:2,veggente:1');
   assert.equal(R.deckKey({ lupo: 2, veggente: 1 }), R.deckKey({ veggente: 1, lupo: 2 }));
-  const match = { id: 'm1', initialDeckMap: { lupo: 1, contadino: 4 }, players: [player('a', 'lupo'), player('g', 'giullare')], mode: 'auto', turn: 3 };
+  const match = { id: 'm1', initialDeckMap: { lupo: 1, contadino: 4 }, players: [player('a', 'lupo'), player('g', 'giullare')], turn: 3 };
   const rec = R.buildMatchRecord(match, { type: 'solo', playerId: 'g' }, 1000);
   assert.equal(rec.soloRoleId, 'giullare');
-  assert.equal(rec.mode, 'auto');
+  assert.equal('mode' in rec, false);
   assert.equal(rec.deckKey, 'contadino:4,lupo:1');
   let list = R.upsertMatchRecord([], rec);
   list = R.upsertMatchRecord(list, { ...rec, id: 'm2', winner: 'village', soloRoleId: '' });
@@ -762,4 +742,38 @@ test('testi vecchi del Gufo aggiornati, quelli scritti da chi gioca no', () => {
   assert.match(res.roles[0].markText, /parte con un voto contro/);
   assert.equal(res.roles[0].narratorNote, 'La mia nota personale.');
   assert.equal(R.refreshOutdatedRoleTexts([findRole('gufo')]).changed, false);
+});
+
+// ---------- 1.9: Gemelli tolti, restano i Massoni ----------
+test('Gemelli tolti: al loro posto i Massoni, ovunque', () => {
+  assert.equal(R.isReplacedRoleId('gemelli'), true);
+  assert.equal(R.replacementRoleId('gemelli'), 'massoni');
+  assert.equal(R.replacementRoleId('veggente'), 'veggente');
+  for (const presets of Object.values(R.PRESETS_BY_COUNT)) {
+    for (const p of presets) assert.ok(!('gemelli' in p.roles), `${p.code}: niente Gemelli`);
+  }
+  // ruoli salvati: via i Gemelli; se mancano i Massoni si aggiungono
+  const gemelli = { id: 'gemelli', name: 'Gemelli', icon: '👥', faction: 'Villaggio' };
+  const noMassoni = R.removeReplacedRoles([findRole('lupo'), gemelli, findRole('veggente')]);
+  assert.equal(noMassoni.changed, true);
+  assert.deepEqual([...noMassoni.roles].map(r => r.id), ['lupo', 'veggente', 'massoni']);
+  const withMassoni = R.removeReplacedRoles([findRole('lupo'), findRole('massoni'), gemelli]);
+  assert.deepEqual([...withMassoni.roles].map(r => r.id), ['lupo', 'massoni']);
+  assert.equal(R.removeReplacedRoles(roles()).changed, false);
+  // mazzo, partita in corso e statistiche
+  assert.deepEqual({ ...R.replaceRolesInDeck({ lupo: 2, gemelli: 2, massoni: 1, contadino: 0 }) }, { lupo: 2, massoni: 3 });
+  const match = { players: [player('a', 'gemelli', { originalRoleId: 'gemelli' }), player('b', 'lupo', { originalRoleId: 'copione' })], initialDeckMap: { gemelli: 2, lupo: 1 } };
+  assert.equal(R.replaceRolesInMatch(match), true);
+  assert.equal(match.players[0].roleId, 'massoni');
+  assert.equal(match.players[0].originalRoleId, 'massoni');
+  assert.equal(match.players[1].originalRoleId, 'copione');
+  assert.deepEqual({ ...match.initialDeckMap }, { massoni: 2, lupo: 1 });
+  assert.equal(R.replaceRolesInMatch(match), false);
+  assert.deepEqual({ ...R.parseDeckKey('gemelli:2,lupo:1,boh,x:0') }, { gemelli: 2, lupo: 1 });
+  const [rec] = R.sanitizeMatchRecords([{ id: 'm1', date: 1, deckKey: 'gemelli:2,lupo:2,veggente:1', players: 5, mode: 'auto', winner: 'village', soloRoleId: '', turns: 3 }]);
+  assert.equal(rec.deckKey, 'lupo:2,massoni:2,veggente:1');
+  assert.equal('mode' in rec, false);
+  // un vecchio codice con i Gemelli importato: diventa un ruolo proprio (non sparisce al riavvio)
+  const merged = R.mergeImportedRoles([findRole('lupo')], [gemelli], () => 'custom_1');
+  assert.deepEqual([...merged.roles].map(r => r.id), ['lupo', 'custom_1']);
 });

@@ -32,11 +32,12 @@ let appSettings = {
   deckAnnounced: false,    // all'inizio si annunciano i ruoli in gioco
   surpriseEvents: false,   // eventi a sorpresa nelle notti
   // Preferenze del Narratore (valgono per tutte le partite)
-  playMode: 'narrator',      // 'narrator' (c'è un Narratore) | 'auto' (senza Narratore: il telefono passa di mano in mano)
   narratorLevel: 'beginner', // 'beginner' (consigli a ogni passo) | 'expert' (solo l'essenziale)
-  voiceOn: false,            // il telefono legge le frasi ad alta voce
-  soundsOn: true             // ululato, gallo, campanella...
+  soundsOn: true             // gufo, ululato, gallo, campanella...
 };
+
+// Impostazioni delle versioni precedenti che non esistono più (1.9: partita senza Narratore e voce)
+const RETIRED_SETTINGS = ['playMode', 'voiceOn'];
 
 // Stato completo della partita attiva (salvato a ogni azione)
 let activeMatch = null;
@@ -213,6 +214,7 @@ function loadAllFromStorage() {
       appSettings = { ...appSettings, ...JSON.parse(savedSettings) };
     }
   } catch (e) {}
+  RETIRED_SETTINGS.forEach(k => { delete appSettings[k]; });
 
   // 4. Partita in corso
   try {
@@ -243,7 +245,10 @@ function migrateMatch(match) {
   if (!TIE_RULE_KEYS.includes(match.tieRule)) match.tieRule = 'runoff';
   ['revealDead', 'deckAnnounced', 'surpriseEvents'].forEach(k => { if (typeof match[k] !== 'boolean') match[k] = false; });
   if (match.event && !findSurpriseEvent(match.event.id)) match.event = null;
-  if (match.mode !== 'auto') match.mode = 'narrator';
+  // Partite senza Narratore (modalità tolta con la 1.9): si continuano con il Narratore
+  delete match.mode;
+  delete match.pass;
+  replaceRolesInMatch(match); // ruoli tolti (es. Gemelli → Massoni)
   if (!match.id) match.id = `m${Date.now()}`;
   match.players.forEach(p => { delete p.extraPin; }); // le note sui giocatori non ci sono più (1.8)
 }
@@ -285,6 +290,11 @@ function migrateLegacyMatch(match) {
 // e le capacità che mancano (azione notturna, regole, vittoria, caratteristiche...).
 function migrateRoles() {
   let changed = false;
+  const retired = removeReplacedRoles(rolesDB);
+  if (retired.changed) {
+    rolesDB = retired.roles;
+    changed = true;
+  }
   const refreshed = refreshOutdatedRoleTexts(rolesDB);
   if (refreshed.changed) {
     rolesDB = refreshed.roles;
@@ -328,6 +338,10 @@ function completeRoleCapabilities(r) {
 // Toglie dal mazzo i ruoli che non esistono più (eliminati o dopo il ripristino dei ruoli base).
 function pruneDeckOfMissingRoles() {
   let changed = false;
+  if (Object.keys(appSettings.selectedDeck).some(isReplacedRoleId)) {
+    appSettings.selectedDeck = replaceRolesInDeck(appSettings.selectedDeck);
+    changed = true;
+  }
   // preset delle versioni precedenti (codici cambiati con la 1.5)
   const allCodes = Object.values(PRESETS_BY_COUNT).flat().map(p => p.code);
   if (appSettings.selectedPresetCode && !allCodes.includes(appSettings.selectedPresetCode)) {
@@ -473,13 +487,11 @@ function renderSetupScreen() {
 
   renderPlayerChips();
   renderSetupTabs();
-  syncPlayModeUI();
   updateSetupDeckCounters();
 }
 
 function renderPlayerChips() {
   const count = setupPlayers.length;
-  if (document.getElementById('seatOrderHint')) syncPlayModeUI();
   document.getElementById('playerCountLabel').textContent = count;
   document.getElementById('btnClearPlayers').style.display = count > 0 ? 'inline-flex' : 'none';
 
@@ -679,9 +691,9 @@ function isExpertNarrator() {
 }
 
 function syncNarratorPrefs() {
-  [['toggleVoice', 'voiceOn'], ['toggleVoiceInGame', 'voiceOn'], ['toggleSounds', 'soundsOn'], ['toggleSoundsInGame', 'soundsOn']].forEach(([id, key]) => {
+  ['toggleSounds', 'toggleSoundsInGame'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.checked = key === 'voiceOn' ? appSettings.voiceOn === true : appSettings.soundsOn !== false;
+    if (el) el.checked = soundsOn();
   });
   document.querySelectorAll('.level-choice').forEach(btn => {
     const active = btn.dataset.level === (isExpertNarrator() ? 'expert' : 'beginner');
@@ -695,22 +707,15 @@ function setNarratorLevel(level) {
   appSettings.narratorLevel = level === 'expert' ? 'expert' : 'beginner';
   saveSettingsToStorage();
   syncNarratorPrefs();
+  if (document.getElementById('screenSetup').classList.contains('active')) renderSetupStepper();
   vibrate('tap');
 }
 
-async function onNarratorPrefToggle(key, checked) {
-  appSettings[key] = checked;
+function onSoundsToggle(checked) {
+  appSettings.soundsOn = checked;
   saveSettingsToStorage();
   syncNarratorPrefs();
-  if (key === 'soundsOn' && checked) playSound('bell');
-  if (key === 'voiceOn') {
-    if (!checked) {
-      stopNarration();
-      return;
-    }
-    const ok = await speakText('La voce del Narratore è attiva.');
-    if (ok === false) voiceUnavailable();
-  }
+  if (checked) playSound('bell');
 }
 
 function onMatchOptionToggle(key, checked) {
@@ -965,7 +970,7 @@ function renderSetupStepper() {
   const status = [
     `👥 ${playerCount} ${playerCount === 1 ? 'giocatore' : 'giocatori'}`,
     `🃏 ${getSelectedDeckTotal()} / ${playerCount} ruoli`,
-    isAutoPlayMode() ? '🤝 Senza Narratore' : '📖 Con il Narratore'
+    isExpertNarrator() ? '⚡ Narratore esperto' : '🎓 Narratore principiante'
   ];
   document.getElementById('stickyStepLabel').textContent = `Tappa ${setupStep} di ${SETUP_STEP_COUNT}`;
   const statusEl = document.getElementById('stickyDeckStatus');
@@ -977,37 +982,6 @@ function renderSetupStepper() {
   const problemEl = document.getElementById('stickyDeckProblem');
   problemEl.textContent = problem;
   problemEl.style.display = problem ? 'block' : 'none';
-}
-
-/* ---------- Con o senza Narratore ---------- */
-function isAutoPlayMode() {
-  return appSettings.playMode === 'auto';
-}
-
-function setPlayMode(mode) {
-  appSettings.playMode = mode === 'auto' ? 'auto' : 'narrator';
-  saveSettingsToStorage();
-  vibrate('tap');
-  syncPlayModeUI();
-  renderSetupStepper();
-}
-
-function syncPlayModeUI() {
-  const auto = isAutoPlayMode();
-  document.getElementById('playersSubtitle').textContent = auto
-    ? 'Nell\'ordine in cui siete seduti (trascina ☰ per cambiare) • Minimo 5'
-    : 'Chi riceve un ruolo • Minimo 5 giocatori';
-  const order = document.getElementById('seatOrderHint');
-  order.style.display = auto ? 'block' : 'none';
-  order.innerHTML = auto
-    ? `📍 Di notte il telefono passa in quest'ordine: <strong>${escapeHtml(setupPlayers.join(' → ') || '—')}</strong>. Deve essere l'ordine in cui siete seduti: se non lo è, torna ai Giocatori e trascina i nomi con ☰.`
-    : '';
-  document.querySelectorAll('.mode-choice').forEach(btn => {
-    const active = btn.dataset.mode === (auto ? 'auto' : 'narrator');
-    btn.classList.toggle('active', active);
-    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-  });
-  document.getElementById('setupPane3').classList.toggle('play-auto', auto);
 }
 
 /* ---------- Benvenuto al primo avvio ---------- */
@@ -1487,10 +1461,8 @@ function startDistributionPhase() {
     turn: 1,
     phase: 'night', // 'night' | 'day'
     ghostRule: appSettings.ghostRule !== false,
-    autoResolve: isAutoPlayMode() || appSettings.autoResolve !== false,
+    autoResolve: appSettings.autoResolve !== false,
     enforceRules: appSettings.enforceRules !== false,
-    mode: isAutoPlayMode() ? 'auto' : 'narrator', // senza Narratore: il telefono passa di mano in mano
-    pass: null,             // notte senza Narratore: a chi tocca e mosse segrete
     tieRule: TIE_RULE_KEYS.includes(appSettings.tieRule) ? appSettings.tieRule : 'runoff',
     revealDead: getSetupOption('revealDead'),
     deckAnnounced: getSetupOption('deckAnnounced'),
@@ -1558,7 +1530,7 @@ function nextDistributionPlayer() {
 }
 
 function beginNarratorMatch() {
-  lastNarratedKey = null;
+  lastSoundKey = null;
   activeMatch.status = 'playing';
   activeMatch.turn = 1;
   activeMatch.phase = 'night';
@@ -1573,7 +1545,7 @@ function resumeSavedMatch() {
     renderDistributionStep();
     showScreen('screenDistribution');
   } else {
-    syncNarrationKey();
+    syncStepSoundKey();
     renderNarratorDashboard();
     showScreen('screenNarrator');
   }
@@ -1618,10 +1590,6 @@ function renderNarratorDashboard() {
   // Controllo Banner Vittoria
   renderVictoryBanner();
 
-  // Senza Narratore: niente scheda Giocatori né contatori (svelerebbero i ruoli)
-  document.getElementById('screenNarrator').classList.toggle('mode-auto', isAutoMatch());
-  document.getElementById('modalGameMenu').classList.toggle('play-auto', isAutoMatch());
-
   // Modalità guidata (passo attuale) e scheda Giocatori per le correzioni
   renderNarratorGuide();
   renderNarratorPlayersList();
@@ -1659,8 +1627,8 @@ let lastVictoryText = null;
 /* ---------- Statistiche delle partite ---------- */
 function loadStats() {
   try {
-    const list = JSON.parse(localStorage.getItem(STORAGE_KEYS.STATS) || '[]');
-    return Array.isArray(list) ? list : [];
+    // ripulite a ogni lettura: così valgono anche le correzioni (es. Gemelli → Massoni nei mazzi)
+    return sanitizeMatchRecords(JSON.parse(localStorage.getItem(STORAGE_KEYS.STATS) || '[]'));
   } catch (e) {
     return [];
   }
@@ -1761,7 +1729,7 @@ function undoPhaseChange() {
   doWithUndo(`↩️ Sei tornato a: ${getPhaseLabel(previous)}`, () => {
     stopDayTimer();
     activeMatch = previous;
-    syncNarrationKey();
+    syncStepSoundKey();
     saveMatchToStorage();
     renderNarratorDashboard();
   });
@@ -1778,7 +1746,7 @@ let narratorTab = 'guide';
 let emptyCallTimer = null; // { key, endsAt, interval, done }
 
 function isAutoResolve() {
-  return !!activeMatch && (activeMatch.autoResolve !== false || activeMatch.mode === 'auto');
+  return !!activeMatch && activeMatch.autoResolve !== false;
 }
 
 function isRulesEnforced() {
@@ -1831,7 +1799,6 @@ function guideGo(delta) {
   const plan = getGuidePlan();
   const current = getGuideIndex(plan);
   const idx = Math.min(plan.length - 1, Math.max(0, current + delta));
-  if (delta > 0) prepareStepClose(plan[current]);
   setGuideStep(plan[idx].key);
 }
 
@@ -1856,7 +1823,6 @@ function switchNarratorTab(tab) {
 }
 
 function applyNarratorTab() {
-  if (isAutoMatch()) narratorTab = 'guide';
   const isGuide = narratorTab === 'guide';
   document.getElementById('narratorGuidePanel').style.display = isGuide ? 'flex' : 'none';
   document.getElementById('guideBottomBar').style.display = isGuide ? 'block' : 'none';
@@ -1866,10 +1832,6 @@ function applyNarratorTab() {
 }
 
 function renderNarratorGuide() {
-  if (isAutoMatch() && activeMatch.phase === 'night') {
-    renderPassNight();
-    return;
-  }
   const plan = getGuidePlan();
   const idx = getGuideIndex(plan);
   const step = plan[idx];
@@ -1901,7 +1863,7 @@ function renderNarratorGuide() {
     stopEmptyCallTimer();
   }
   if (step.kind === 'debate') updateTimerUI();
-  maybeNarrateStep(step);
+  playStepSoundOnce(step);
 }
 
 function renderGuideNav(step, plan, idx) {
@@ -1955,9 +1917,9 @@ function guideTip(kind) {
   return NARRATOR_TIPS[kind] ? `<div class="guide-tip">🎓 ${escapeHtml(NARRATOR_TIPS[kind])}</div>` : '';
 }
 
-// Frase da leggere ad alta voce, con il pulsante 🔊 per farla leggere al telefono
+// Frase che il Narratore legge ad alta voce
 function phraseHtml(contentHtml) {
-  return `<div class="guide-phrase"><span class="phrase-text">${contentHtml}</span><button class="phrase-say" onclick="sayPhrase(this)" title="Leggi ad alta voce" aria-label="Leggi ad alta voce">🔊</button></div>`;
+  return `<div class="guide-phrase">${contentHtml}</div>`;
 }
 
 // Evento a sorpresa del turno in corso (esce al calare della notte)
@@ -2004,7 +1966,6 @@ function setSurpriseEvent(ev) {
   if (ev) activeMatch.lastEventId = ev.id;
   saveMatchToStorage();
   renderNarratorDashboard();
-  if (ev) narrate([{ say: ev.phrase }]);
 }
 
 function surpriseEventExclusions() {
@@ -2020,15 +1981,6 @@ function rerollSurpriseEvent() {
 function removeSurpriseEvent() {
   vibrate('tap');
   setSurpriseEvent(null);
-}
-
-function introPhrases() {
-  const lines = [];
-  if (activeMatch.turn === 1 && activeMatch.deckAnnounced) lines.push(deckAnnouncement(activeMatch.initialDeckMap, findRoleOrNull));
-  lines.push(NIGHTFALL_PHRASE);
-  const ev = currentRoundEvent();
-  if (ev) lines.push(ev.phrase);
-  return lines;
 }
 
 function renderIntroStep(plan) {
@@ -2258,7 +2210,7 @@ let expertAdvanceTimer = null;
 
 function scheduleExpertAdvance(stepKey) {
   clearTimeout(expertAdvanceTimer);
-  if (!isExpertNarrator() || isAutoMatch()) return;
+  if (!isExpertNarrator()) return;
   const step = getGuidePlan().find(st => st.key === stepKey);
   if (!step || !EXPERT_AUTO_ADVANCE_KINDS.includes(step.kind) || getStepChosenIds(step).length < (step.targets || 1)) return;
   const snapshot = JSON.stringify(getStepChosenIds(step));
@@ -2391,7 +2343,7 @@ function renderMorningStep() {
 
   const ghost = activeMatch.players.find(p => p.isGhost && p.diedOnTurn === turn);
   if (ghost) html += `<div class="guide-info">👻 <strong>${escapeHtml(ghost.name)}</strong> è il Fantasma: da ora resta in silenzio, ma vota al rogo.</div>`;
-  if (last && last.copies.length && !isAutoMatch()) {
+  if (last && last.copies.length) {
     html += `<div class="guide-note">🎭 Solo per te: ${last.copies.map(c => {
       const nr = c.newRoleId ? getRoleById(c.newRoleId) : null;
       return `${escapeHtml(nameOf(c.playerId))} ora è ${nr ? `${escapeHtml(nr.icon)} ${escapeHtml(nr.name)}` : 'senza ruolo nuovo'}`;
@@ -2420,7 +2372,7 @@ function renderDebateStep() {
     </div>
     <div class="guide-info">
       👻 Fantasma: ${ghosts.length ? `<strong>${escapeHtml(ghosts.join(', '))}</strong> (zitto, ma vota)` : 'nessuno'}
-      ${isAutoMatch() ? '' : `<br>🎖️ Voto doppio: ${mayors.length ? `<strong>${escapeHtml(mayors.join(', '))}</strong>` : 'nessuno'}`}
+      <br>🎖️ Voto doppio: ${mayors.length ? `<strong>${escapeHtml(mayors.join(', '))}</strong>` : 'nessuno'}
     </div>
     ${guideTip('debate')}
   `;
@@ -2443,7 +2395,7 @@ function renderVoteStep() {
     return `
       <div class="guide-result result-danger">🔥 Oggi il villaggio ha bruciato <strong>${escapeHtml(burned.name)}</strong> (${escapeHtml(role.icon)} ${escapeHtml(role.name)}).</div>
       ${phraseHtml(getVotePhrases().map(escapeHtml).join('<br><br>'))}
-      <div class="guide-muted guide-help">${isAutoMatch() ? 'Se avete sbagliato, toccate ↩️ in alto per tornare indietro.' : 'Se hai sbagliato, nella scheda 👥 Giocatori tocca ❌ per riportarlo in vita.'}</div>
+      <div class="guide-muted guide-help">Se hai sbagliato, nella scheda 👥 Giocatori tocca ❌ per riportarlo in vita.</div>
     `;
   }
   if (dayEventIs('noBurning')) {
@@ -2581,7 +2533,6 @@ function updateEmptyCallCountdown() {
     clearInterval(emptyCallTimer.interval);
     emptyCallTimer.interval = null;
     vibrate('tap');
-    closeEmptyCallAloud(emptyCallTimer.key);
   }
 }
 
@@ -2598,530 +2549,38 @@ function markNightDeath(playerId) {
 }
 
 /* =========================================================================
-   PARTITA SENZA NARRATORE
-   Di notte il telefono passa a tutti i vivi, uno alla volta (nell'ordine in cui sono seduti).
-   Chi lo riceve fa la sua mossa in segreto; chi non ha niente da fare tocca un nome a caso,
-   così dal tempo passato col telefono nessuno capisce chi ha poteri.
-   Le mosse stanno in activeMatch.pass.votes; all'alba diventano activeMatch.nightChoices.
+   SUONI DEL NARRATORE
+   Entrando in un passo nuovo: gufo quando cala la notte, ululato per i lupi,
+   gallo all'alba, campanella per il voto. Ogni passo suona una volta sola.
 ========================================================================= */
-const AUTO_NIGHTFALL_PHRASE = '«Cala la notte: il telefono passerà a tutti, uno alla volta. Chi non ce l\'ha chiude gli occhi.»';
-const AUTO_DONE_PHRASE = '«Tutti hanno fatto la loro mossa. Appoggiate il telefono al centro: il villaggio si sveglia!»';
-// Ognuno tiene il telefono almeno questo tempo: chi ha un potere e chi no ci mettono uguale
-const PASS_MIN_SECONDS = 6;
-let passActionStart = 0;
-let passTimer = null;
-
-function passSecondsLeft() {
-  return Math.max(0, Math.ceil(PASS_MIN_SECONDS - (Date.now() - passActionStart) / 1000));
-}
-
-function stopPassTimer() {
-  if (passTimer) clearInterval(passTimer);
-  passTimer = null;
-}
-
-// Aggiorna il pulsante "Fatto": acceso solo con la mossa fatta e dopo il tempo minimo
-function updatePassDoneButton() {
-  const btn = document.getElementById('btnPassDone');
-  if (!btn || !activeMatch || !activeMatch.pass) {
-    stopPassTimer();
-    return;
-  }
-  const me = passPlayer(activeMatch.pass);
-  const complete = me ? buildPassAction(me).complete : false;
-  const left = passSecondsLeft();
-  btn.disabled = !complete || left > 0;
-  btn.textContent = !complete ? '✋ Fai la tua mossa' : left > 0 ? `⏳ Fatto tra ${left}...` : '✅ Fatto: copri e passa il telefono';
-  if (left === 0) stopPassTimer();
-}
-
-function isAutoMatch() {
-  return !!activeMatch && activeMatch.mode === 'auto';
-}
-
-function ensurePass() {
-  if (!activeMatch.pass || activeMatch.pass.turn !== activeMatch.turn) {
-    activeMatch.pass = { turn: activeMatch.turn, order: passOrder(activeMatch.players), index: 0, stage: 'intro', votes: {}, decoy: {} };
-  }
-  const pass = activeMatch.pass;
-  // chi è morto nel frattempo non riceve il telefono
-  while ((pass.stage === 'cover' || pass.stage === 'action') && pass.index < pass.order.length) {
-    const p = activeMatch.players.find(x => x.id === pass.order[pass.index]);
-    if (p && !p.isDead) break;
-    pass.index++;
-  }
-  if ((pass.stage === 'cover' || pass.stage === 'action') && pass.index >= pass.order.length) pass.stage = 'done';
-  return pass;
-}
-
-function passPlayer(pass) {
-  return activeMatch.players.find(p => p.id === pass.order[pass.index]) || null;
-}
-
-function passNarrationKey(pass) {
-  return `pass|${activeMatch.turn}|${pass.stage}|${pass.index}`;
-}
-
-function getPassVote(key, playerId) {
-  const byPlayer = (activeMatch.pass.votes || {})[key] || {};
-  return Array.isArray(byPlayer[playerId]) ? byPlayer[playerId] : null;
-}
-
-function setPassVote(key, playerId, list) {
-  const votes = activeMatch.pass.votes;
-  votes[key] = votes[key] || {};
-  votes[key][playerId] = list;
-}
-
-// Passi della notte in cui gioca questo giocatore
-function passStepsFor(player, plan) {
-  return plan.filter(st => st.kind !== 'intro' && st.kind !== 'dawn' && (st.aliveHolders || []).some(h => h.id === player.id));
-}
-
-function passTargetGrid(step, player, key, chosen, allowNone) {
-  const options = getTargetOptions(step, activeMatch.players, rolesDB, activeMatch.prevNightChoices || {}, isRulesEnforced());
-  const colors = getMatchColors();
-  return `
-    <div class="target-grid">
-      ${options.map(o => `
-        <button class="target-btn${chosen.includes(o.id) ? ' selected' : ''}" ${o.disabled ? 'disabled' : ''} onclick="passPick('${key}', '${o.id}', ${step.targets || 1})">
-          <span class="target-name">${avatarHtml(o.name, colors[o.id], 'sm')} ${escapeHtml(o.name)}</span>
-          ${o.reason ? `<span class="target-reason">${escapeHtml(o.reason)}</span>` : ''}
-        </button>`).join('')}
-    </div>
-    ${allowNone ? `<button class="btn btn-sm${chosen.length === 1 && chosen[0] === '' ? ' btn-primary' : ''}" onclick="passPick('${key}', '', 1)">Nessuno</button>` : ''}`;
-}
-
-/**
- * Un pezzo della schermata segreta: { html, complete, needsDecoy }.
- * needsDecoy = in questo pezzo non c'è niente da toccare (serve la finta mossa).
- */
-function renderPassSection(step, player) {
-  const role = getStepRoles(step)[0];
-  const nameOf = id => (activeMatch.players.find(p => p.id === id) || { name: '?' }).name;
-  const others = step.aliveHolders.filter(h => h.id !== player.id).map(h => h.name);
-  const title = `<div class="potion-title">${escapeHtml(role.icon)} ${escapeHtml(step.kind === 'wolves' ? 'Il branco' : role.name)}</div>`;
-
-  if (step.exhausted) {
-    return { html: `${title}<div class="guide-muted">🔒 Hai già usato ${step.kind === 'witch' ? 'entrambe le pozioni' : 'il tuo potere'}.</div>`, complete: true, needsDecoy: true };
-  }
-
-  if (step.kind === 'wolves') {
-    const pack = others.length ? `🐺 Il tuo branco: <strong>${escapeHtml(joinNames(others))}</strong>.` : '🐺 Sei l\'unico lupo rimasto.';
-    if (step.noKill) {
-      return { html: `${title}<div class="guide-info">${pack}</div><div class="guide-empty">🌑 Eclissi: stanotte il branco non può uccidere.</div>`, complete: true, needsDecoy: true };
-    }
-    const targets = step.targets || 1;
-    const mine = getPassVote(step.key, player.id) || [];
-    const sofar = step.aliveHolders
-      .filter(h => h.id !== player.id && getPassVote(step.key, h.id))
-      .map(h => `${escapeHtml(h.name)} → ${escapeHtml(getPassVote(step.key, h.id).filter(Boolean).map(nameOf).join(' e ') || 'nessuno')}`);
-    return {
-      html: `${title}
-        <div class="guide-info">${pack}${sofar.length ? `<br>Scelte del branco finora: ${sofar.join(', ')}.` : ''}</div>
-        ${targets > 1 ? '<div class="guide-info">🌕 Luna rossa: stanotte scegliete <strong>due</strong> vittime.</div>' : ''}
-        <div class="guide-question">Chi volete sbranare?${targets > 1 ? ` <span class="guide-muted">(${mine.length} di 2)</span>` : ''}</div>
-        ${passTargetGrid(step, player, step.key, mine, false)}
-        <div class="guide-muted">Se il branco non è d'accordo, vince la persona scelta da più lupi (a parità, la prima scelta).</div>`,
-      complete: mine.length >= targets,
-      needsDecoy: false
-    };
-  }
-
-  if (step.kind === 'witch') {
-    let html = title;
-    let complete = true;
-    if (!step.saveUsed) {
-      const save = getPassVote(witchSaveKey(step.key), player.id);
-      complete = complete && !!save;
-      html += `<div class="guide-question">💚 Usi la pozione della vita sulla vittima dei lupi di stanotte, chiunque sia?</div>
-        <div class="pass-yes-no">
-          <button class="btn${save && save[0] === ANY_WOLF_VICTIM ? ' btn-success' : ''}" onclick="passPick('${witchSaveKey(step.key)}', '${ANY_WOLF_VICTIM}', 1, true)">Sì, salvala</button>
-          <button class="btn${save && save[0] === '' ? ' btn-primary' : ''}" onclick="passPick('${witchSaveKey(step.key)}', '', 1, true)">No</button>
-        </div>`;
-    }
-    if (!step.killUsed) {
-      const kill = getPassVote(step.key, player.id);
-      complete = complete && !!kill;
-      html += `<div class="guide-question">☠️ Usi la pozione della morte? Su chi?</div>${passTargetGrid(step, player, step.key, kill || [], true)}`;
-    }
-    return { html, complete, needsDecoy: false };
-  }
-
-  if (step.blind) {
-    return { html: `${title}<div class="guide-empty">🌫️ Nebbia: stanotte non vedi nulla.</div>`, complete: true, needsDecoy: true };
-  }
-
-  if (step.kind === 'medium') {
-    const burned = findBurnedOnDay(activeMatch.players, activeMatch.turn - 1);
-    const wasWolf = burned && getRoleById(burned.roleId).faction === 'Branco';
-    const text = !burned ? '🔥 Ieri nessuno è stato bruciato al rogo.'
-      : wasWolf ? `👍 ${escapeHtml(burned.name)}, bruciato ieri, <strong>era un lupo</strong>.`
-        : `👎 ${escapeHtml(burned.name)}, bruciato ieri, <strong>non era un lupo</strong>.`;
-    return { html: `${title}<div class="guide-result ${wasWolf ? 'result-danger' : 'result-good'}">${text}</div>`, complete: true, needsDecoy: true };
-  }
-
-  if (step.kind === 'none') {
-    const group = others.length ? `<div class="guide-info">Gli altri del tuo gruppo: <strong>${escapeHtml(joinNames(others))}</strong>.</div>` : '';
-    return { html: `${title}${group || '<div class="guide-muted">Stanotte ti svegli e basta.</div>'}`, complete: true, needsDecoy: true };
-  }
-
-  // Azioni con un bersaglio: protegge, indaga, segno, copia, uccide, indica
-  const picked = getPassVote(step.key, player.id) || [];
-  const target = picked[0] ? activeMatch.players.find(p => p.id === picked[0]) : null;
-  let result = '';
-  if (target) {
-    if (step.kind === 'investigate') {
-      result = investigateAnswer(target, findRoleOrNull).isWolf
-        ? `<div class="guide-result result-danger">👍 Sì: <strong>${escapeHtml(target.name)}</strong> è un lupo.</div>`
-        : `<div class="guide-result result-good">👎 No: <strong>${escapeHtml(target.name)}</strong> non è un lupo.</div>`;
-    } else if (step.kind === 'protect') {
-      result = `<div class="guide-result result-good">🛡️ Stanotte proteggi <strong>${escapeHtml(target.name)}</strong>.</div>`;
-    } else if (step.kind === 'mark') {
-      result = `<div class="guide-result">${escapeHtml(role.icon)} Domattina verrà annunciato il segno su <strong>${escapeHtml(target.name)}</strong>.</div>`;
-    } else if (step.kind === 'copy') {
-      const newRoleId = copyResultRoleId(findRoleOrNull(target.roleId), rolesDB);
-      const newRole = newRoleId ? getRoleById(newRoleId) : null;
-      result = `<div class="guide-result">🎭 Dall'alba sarai: <strong>${newRole ? `${escapeHtml(newRole.icon)} ${escapeHtml(newRole.name)}` : 'senza un ruolo nuovo'}</strong>.</div>`;
-    } else if (step.kind === 'kill') {
-      result = `<div class="guide-result result-danger">${escapeHtml(role.icon)} Hai scelto <strong>${escapeHtml(target.name)}</strong>.</div>`;
-    } else {
-      result = `<div class="guide-result">📌 Hai indicato <strong>${escapeHtml(target.name)}</strong>.</div>`;
-    }
-  }
-  const question = step.kind === 'kill' ? 'Chi vuoi colpire? (se vuoi)' : (NIGHT_ACTIONS[step.kind] || NIGHT_ACTIONS.note).question;
-  return {
-    html: `${title}<div class="guide-question">${escapeHtml(question)}</div>${passTargetGrid(step, player, step.key, picked, step.kind === 'kill')}${result}`,
-    complete: picked.length > 0,
-    needsDecoy: false
-  };
-}
-
-// Schermata segreta di un giocatore: le sue mosse (o la finta mossa) e se ha finito
-function buildPassAction(player) {
-  const plan = currentNightPlan();
-  const role = getRoleById(player.roleId);
-  const sections = passStepsFor(player, plan).map(st => renderPassSection(st, player));
-  const needsDecoy = sections.every(sec => sec.needsDecoy);
-  let html = `<div class="pass-role ${getFactionClass(role.faction)}">
-      <span class="pass-role-icon">${escapeHtml(role.icon)}</span>
-      <span><strong>${escapeHtml(player.name)}, sei: ${escapeHtml(role.name)}</strong><span class="card-subtitle">${escapeHtml(role.faction)}</span></span>
-    </div>`;
-  html += sections.map(sec => sec.html).join('');
-  let complete = sections.every(sec => sec.complete);
-  if (needsDecoy) {
-    const decoy = activeMatch.pass.decoy[player.id];
-    const colors = getMatchColors();
-    const peeks = roleTraits(findRoleOrNull(player.roleId)).peeksAtWolves;
-    html += `<div class="guide-info">${sections.length ? 'Non hai altro da fare.' : 'Stanotte non hai niente da fare.'} Tocca un nome qualsiasi: non succede nulla, serve solo a non farti scoprire.${peeks ? '<br>👀 Senza Narratore non si può sbirciare.' : ''}</div>
-      <div class="target-grid">
-        ${activeMatch.players.filter(p => !p.isDead).map(p => `
-          <button class="target-btn${decoy === p.id ? ' selected' : ''}" onclick="passDecoy('${p.id}')">
-            <span class="target-name">${avatarHtml(p.name, colors[p.id], 'sm')} ${escapeHtml(p.name)}</span>
-          </button>`).join('')}
-      </div>`;
-    complete = complete && !!decoy;
-  }
-  return { html, complete };
-}
-
-function renderPassNight() {
-  const pass = ensurePass();
-  const total = pass.order.length;
-  const body = document.getElementById('guideStep');
-  const bar = document.getElementById('guideBottomBar');
-  document.getElementById('guideChips').innerHTML = '';
-  let html = renderDeathActionsCard();
-  let nav = '';
-  const player = passPlayer(pass);
-
-  if (pass.stage === 'intro') {
-    document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · senza Narratore`;
-    const first = activeMatch.players.find(p => p.id === pass.order[0]);
-    html += `<div class="guide-title">🌙 Cala la notte</div>`;
-    if (activeMatch.turn === 1 && activeMatch.deckAnnounced) {
-      html += `<div class="guide-info">📣 Prima di iniziare, leggete i ruoli in gioco:</div>${phraseHtml(escapeHtml(deckAnnouncement(activeMatch.initialDeckMap, findRoleOrNull)))}`;
-    }
-    html += phraseHtml(escapeHtml(AUTO_NIGHTFALL_PHRASE));
-    const ev = currentRoundEvent();
-    if (ev) html += renderEventCard(ev);
-    html += `<div class="guide-info">Chi riceve il telefono tocca <strong>"Sono io"</strong>, fa la sua mossa in segreto e tocca <strong>"Fatto"</strong>. Chi non ha niente da fare tocca un nome a caso: così nessuno capisce chi ha poteri.</div>
-      <div class="guide-muted">Ordine: ${escapeHtml(pass.order.map(id => (activeMatch.players.find(p => p.id === id) || { name: '?' }).name).join(' → '))}</div>`;
-    nav = `<div class="guide-nav"><button class="btn btn-primary guide-next" onclick="passStart()">📱 Inizia: telefono a ${escapeHtml(first ? first.name : '')}</button></div>`;
-  } else if (pass.stage === 'cover' && player) {
-    document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · telefono ${pass.index + 1} di ${total}`;
-    html += `<div class="pass-cover">
-        <div class="guide-muted">📱 Passa il telefono a:</div>
-        ${avatarHtml(player.name, getMatchColors()[player.id], 'lg')}
-        <div class="pass-cover-name">${escapeHtml(player.name)}</div>
-        <div class="guide-muted">Tutti gli altri tengono gli occhi chiusi.</div>
-      </div>`;
-    nav = `<div class="guide-nav"><button class="btn btn-primary guide-next" onclick="passReveal()">👆 Sono ${escapeHtml(player.name)}: inizio</button></div>`;
-  } else if (pass.stage === 'action' && player) {
-    document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · telefono ${pass.index + 1} di ${total}`;
-    const action = buildPassAction(player);
-    html += action.html;
-    if (!passActionStart) passActionStart = Date.now();
-    nav = `<div class="guide-nav"><button id="btnPassDone" class="btn btn-success guide-next" disabled onclick="passDone()">✋ Fai la tua mossa</button></div>`;
-  } else {
-    pass.stage = 'done';
-    document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · tutti hanno giocato`;
-    html += `<div class="guide-title">🌅 Fine della notte</div>${phraseHtml(escapeHtml(AUTO_DONE_PHRASE))}`;
-    nav = `<div class="guide-nav"><button class="btn btn-warning guide-next" onclick="finishPassNight()">☀️ Fai sorgere il Giorno ${activeMatch.turn}</button></div>`;
-  }
-
-  body.innerHTML = html;
-  bar.innerHTML = nav;
-  stopEmptyCallTimer();
-  if (pass.stage === 'action') {
-    updatePassDoneButton();
-    if (!passTimer && passSecondsLeft() > 0) passTimer = setInterval(updatePassDoneButton, 250);
-  } else {
-    stopPassTimer();
-  }
-  maybeNarrateParts(passNarrationKey(pass), passNarration(pass));
-}
-
-function passNarration(pass) {
-  const player = passPlayer(pass);
-  if (pass.stage === 'intro') {
-    const lines = [];
-    if (activeMatch.turn === 1 && activeMatch.deckAnnounced) lines.push(deckAnnouncement(activeMatch.initialDeckMap, findRoleOrNull));
-    lines.push(AUTO_NIGHTFALL_PHRASE);
-    const ev = currentRoundEvent();
-    if (ev) lines.push(ev.phrase);
-    return [{ sound: 'owl' }].concat(lines.map(say => ({ say })));
-  }
-  if (pass.stage === 'cover' && player) return [{ say: `Passa il telefono a ${player.name}.` }];
-  if (pass.stage === 'done') return [{ say: AUTO_DONE_PHRASE }];
-  return [];
-}
-
-function passStart() {
-  const pass = ensurePass();
-  pass.stage = 'cover';
-  pass.index = 0;
-  saveMatchToStorage();
-  vibrate('tap');
-  renderNarratorGuide();
-}
-
-function passReveal() {
-  ensurePass().stage = 'action';
-  passActionStart = Date.now();
-  saveMatchToStorage();
-  vibrate('reveal');
-  renderNarratorGuide();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-// Tocco su un nome nella schermata segreta (targets = quante persone sceglie; toggle = sì/no della pozione)
-function passPick(key, playerId, targets, toggle) {
-  const pass = ensurePass();
-  const me = passPlayer(pass);
-  if (!me || pass.stage !== 'action') return;
-  vibrate('tap');
-  const current = getPassVote(key, me.id) || [];
-  let next;
-  if (toggle || playerId === '' || targets <= 1) {
-    next = [playerId];
-  } else if (current.includes(playerId)) {
-    next = current.filter(id => id !== playerId);
-  } else if (current.filter(Boolean).length < targets) {
-    next = current.filter(Boolean).concat(playerId);
-  } else {
-    showToast(`Hai già scelto ${targets} persone: toccane una per toglierla.`, 'warn');
-    return;
-  }
-  setPassVote(key, me.id, next);
-  saveMatchToStorage();
-  renderNarratorGuide();
-}
-
-function passDecoy(playerId) {
-  const pass = ensurePass();
-  const me = passPlayer(pass);
-  if (!me) return;
-  vibrate('tap');
-  pass.decoy[me.id] = playerId;
-  saveMatchToStorage();
-  renderNarratorGuide();
-}
-
-function passDone() {
-  const pass = ensurePass();
-  const me = passPlayer(pass);
-  if (!me || !buildPassAction(me).complete || passSecondsLeft() > 0) return;
-  vibrate('tap');
-  passActionStart = 0;
-  stopPassTimer();
-  pass.index++;
-  pass.stage = pass.index < pass.order.length ? 'cover' : 'done';
-  saveMatchToStorage();
-  renderNarratorGuide();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-// Alba: le mosse segrete diventano le scelte della notte, poi tutto come con il Narratore
-function finishPassNight() {
-  const pass = ensurePass();
-  const plan = currentNightPlan();
-  const choices = {};
-  const inOrder = byPlayer => pass.order.filter(id => byPlayer && byPlayer[id]).map(id => byPlayer[id]);
-  plan.forEach(st => {
-    if (st.kind === 'intro' || st.kind === 'dawn') return;
-    const picked = pickFromVotes(inOrder(pass.votes[st.key]), st.targets || 1);
-    if (picked[0]) choices[st.key] = picked[0];
-    if (picked[1]) choices[secondTargetKey(st.key)] = picked[1];
-    if (st.kind === 'witch') {
-      const saves = inOrder(pass.votes[witchSaveKey(st.key)]);
-      if (saves.some(list => list[0] === ANY_WOLF_VICTIM)) choices[witchSaveKey(st.key)] = ANY_WOLF_VICTIM;
-    }
-  });
-  activeMatch.nightChoices = choices;
-  advanceToDay();
-}
-
-/* =========================================================================
-   VOCE E SUONI DEL NARRATORE
-   A ogni passo nuovo: prima il suono (gufo, ululato, gallo, campanella), poi la voce legge la frase.
-   La chiusura delle frasi dei ruoli («...chiude gli occhi») si legge quando si tocca Avanti.
-========================================================================= */
-let narrationToken = 0;
-let lastNarratedKey = null;
-let pendingCloseText = '';
-let closeSpokenKey = null;
-let voiceWarned = false;
+const STEP_SOUNDS = { intro: 'owl', wolves: 'howl', morning: 'rooster', vote: 'bell' };
+let lastSoundKey = null;
 
 function soundsOn() {
   return appSettings.soundsOn !== false;
 }
 
-function voiceOn() {
-  return appSettings.voiceOn === true;
-}
-
 function playSound(name) {
-  if (!soundsOn() || typeof LupusSounds === 'undefined') return 0;
-  return LupusSounds.play(name) || 0;
+  if (!soundsOn() || typeof LupusSounds === 'undefined') return;
+  LupusSounds.play(name);
 }
 
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// Legge un testo; false = sul telefono manca la voce italiana
-async function speakText(text) {
-  const clean = speechText(text);
-  if (!clean) return true;
-  const app = nativeApp();
-  if (!app || !app.speak) return false;
-  // se il telefono non avvisa quando ha finito di parlare, si va avanti dopo il tempo stimato
-  const limit = wait(2500 + clean.length * 90).then(() => true);
-  return Promise.race([app.speak(clean), limit]);
-}
-
-function stopNarration() {
-  narrationToken++;
-  const app = nativeApp();
-  if (app && app.stopSpeaking) app.stopSpeaking();
-}
-
-function voiceUnavailable() {
-  if (voiceWarned) return;
-  voiceWarned = true;
-  showToast('🗣️ Manca la voce italiana: scarica "Sintesi vocale di Google" e la lingua italiana dalle impostazioni del telefono.', 'warn');
-  const app = nativeApp();
-  if (app && app.installVoice) app.installVoice();
-}
-
-// parts = [{ sound }, { say }]: ognuno parte quando il precedente è finito. force = legge anche con la voce spenta.
-async function narrate(parts, force = false) {
-  const token = ++narrationToken;
-  const app = nativeApp();
-  if (app && app.stopSpeaking) await app.stopSpeaking();
-  for (const part of parts) {
-    if (token !== narrationToken) return;
-    if (part.sound) {
-      const seconds = playSound(part.sound);
-      if (seconds) await wait(seconds * 1000);
-    } else if (part.say && (force || voiceOn())) {
-      const ok = await speakText(part.say);
-      if (ok === false) {
-        voiceUnavailable();
-        return;
-      }
-    }
-  }
-}
-
-// 🔊 accanto a una frase: la legge subito, anche con la voce automatica spenta
-function sayPhrase(button) {
-  const box = button.closest('.guide-phrase');
-  const text = box ? box.querySelector('.phrase-text').innerText : '';
-  vibrate('tap');
-  narrate(text.split(/\n+/).filter(Boolean).map(line => ({ say: line })), true);
-}
-
-function narrationKey(step) {
+function stepSoundKey(step) {
   return `${activeMatch.turn}|${activeMatch.phase}|${step.key}`;
 }
 
-// Segna il passo attuale come già letto (dopo una ripresa o un "Annulla", senza rileggere)
-function syncNarrationKey() {
+// Segna il passo attuale come già suonato (dopo una ripresa o un "Annulla", senza risuonare)
+function syncStepSoundKey() {
   if (!activeMatch || activeMatch.status !== 'playing') return;
-  if (isAutoMatch() && activeMatch.phase === 'night') {
-    lastNarratedKey = passNarrationKey(ensurePass());
-  } else {
-    const plan = getGuidePlan();
-    lastNarratedKey = narrationKey(plan[getGuideIndex(plan)]);
-  }
-  pendingCloseText = '';
-  stopNarration();
+  const plan = getGuidePlan();
+  lastSoundKey = stepSoundKey(plan[getGuideIndex(plan)]);
 }
 
-// Cosa si sente entrando in un passo
-function stepNarration(step) {
-  switch (step.kind) {
-    case 'intro': return [{ sound: 'owl' }].concat(introPhrases().map(say => ({ say })));
-    case 'dawn': return [];
-    case 'morning': return [{ sound: 'rooster' }].concat(getMorningLines().map(say => ({ say })));
-    case 'debate': return [{ say: DEBATE_PHRASE }];
-    case 'vote': return [{ sound: 'bell' }].concat(getVotePhrases().map(say => ({ say })));
-    case 'dusk': return [{ say: getDuskPhrase() }];
-    default: {
-      const parts = step.kind === 'wolves' ? [{ sound: 'howl' }] : [];
-      parts.push({ say: splitPhrase(rolePhrase(getStepRoles(step)[0])).open });
-      return parts;
-    }
-  }
-}
-
-function maybeNarrateStep(step) {
-  maybeNarrateParts(narrationKey(step), stepNarration(step));
-}
-
-function maybeNarrateParts(key, stepParts) {
-  if (key === lastNarratedKey) return;
-  lastNarratedKey = key;
-  const parts = pendingCloseText ? [{ say: pendingCloseText }] : [];
-  pendingCloseText = '';
-  if (parts.length || stepParts.length) narrate(parts.concat(stepParts));
-}
-
-// Avanti da un passo di un ruolo: prima si dice «...chiude gli occhi»
-function prepareStepClose(step) {
-  if (!step || !step.roleIds.length || closeSpokenKey === narrationKey(step)) return;
-  pendingCloseText = splitPhrase(rolePhrase(getStepRoles(step)[0])).close;
-}
-
-// Chiamata a vuoto: finita l'attesa, la voce chiude la chiamata da sola
-function closeEmptyCallAloud(stepKey) {
-  if (!voiceOn() || !activeMatch || activeMatch.phase !== 'night') return;
-  const step = getGuidePlan().find(st => st.key === stepKey);
-  if (!step || activeMatch.guideKey !== stepKey) return;
-  closeSpokenKey = narrationKey(step);
-  narrate([{ say: splitPhrase(rolePhrase(getStepRoles(step)[0])).close }]);
+function playStepSoundOnce(step) {
+  const key = stepSoundKey(step);
+  if (key === lastSoundKey) return;
+  lastSoundKey = key;
+  if (STEP_SOUNDS[step.kind]) playSound(STEP_SOUNDS[step.kind]);
 }
 
 /* =========================================================================
@@ -3474,15 +2933,8 @@ function togglePlayerGhost(playerId) {
 ========================================================================= */
 let currentAntiAmnesiaPlayerId = null;
 
-// Senza Narratore, di notte chi ha il telefono non deve poter vedere i ruoli degli altri
-function blockedForSecretNight() {
-  if (!isAutoMatch() || activeMatch.phase !== 'night' || evaluateVictoryCondition()) return false;
-  showToast('🌙 Di notte, senza Narratore, i ruoli non si possono guardare: aspettate il giorno.', 'warn');
-  return true;
-}
-
 function openAntiAmnesiaSelector() {
-  if (!activeMatch || blockedForSecretNight()) return;
+  if (!activeMatch) return;
   const container = document.getElementById('antiAmnesiaPlayerButtons');
   container.innerHTML = '';
 
@@ -3797,7 +3249,7 @@ function renderVoteVoters() {
   if (voter) {
     const weight = voteWeight(voter, findRoleOrNull(voter.roleId));
     const tags = [];
-    if (weight === 2 && !isAutoMatch()) tags.push('<span class="badge badge-alleato">🎖️ vale 2</span>');
+    if (weight === 2) tags.push('<span class="badge badge-alleato">🎖️ vale 2</span>');
     if (voter.isGhost) tags.push('<span class="badge badge-solitario">👻 Fantasma</span>');
     const current = vote.votes[voter.id] || '';
     picker.innerHTML = `
@@ -3943,7 +3395,7 @@ function burnFromVote(playerId) {
    18. RIEPILOGO DELLA PARTITA (RUOLI SVELATI E CRONOLOGIA)
 ========================================================================= */
 function openSummaryModal() {
-  if (!activeMatch || blockedForSecretNight()) return;
+  if (!activeMatch) return;
   closeGameMenuModal();
 
   // Cronologia: notti già risolte + le scelte della notte in corso
@@ -4154,9 +3606,6 @@ function renderGuide() {
     decider: 'se c\'è un pareggio decide chi ha il voto doppio (es. il Sindaco).'
   };
   const variants = [`⚖️ <strong>Pareggio al voto:</strong> ${tieTexts[getTieRule()]}`];
-  if (activeMatch ? isAutoMatch() : isAutoPlayMode()) {
-    variants.unshift('🤝 <strong>Senza Narratore:</strong> di notte il telefono passa a tutti i vivi, uno alla volta. Chi non ha niente da fare tocca un nome a caso. Il branco sceglie la vittima con più voti (a parità, la prima scelta); la Strega decide se salvare la vittima dei lupi senza sapere chi è; la Bambina non può sbirciare.');
-  }
   if (option('revealDead')) variants.push('🪦 <strong>Ruoli svelati:</strong> quando qualcuno muore si annuncia che ruolo aveva.');
   if (option('deckAnnounced')) variants.push('📣 <strong>Mazzo annunciato:</strong> all\'inizio si dice a tutti quali ruoli sono in gioco.');
   if (option('surpriseEvents')) {
@@ -4395,7 +3844,7 @@ function restoreAppState(json) {
 
   let screen = st.screen;
   if ((screen === 'screenNarrator' || screen === 'screenDistribution') && !activeMatch) screen = 'screenSetup';
-  syncNarrationKey();
+  syncStepSoundKey();
   if (screen === 'screenNarrator') renderNarratorDashboard();
   else if (screen === 'screenDistribution') renderDistributionStep();
   else if (screen === 'screenRoleEditor') renderEditorRolesList();

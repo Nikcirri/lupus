@@ -1,5 +1,9 @@
 # Novità
 
+## [1.9.1] - 2026-11-07
+
+- Il file da installare è ancora più leggero: circa 1,1 MB.
+
 ## [1.9.0] - 2026-11-07
 
 App più semplice e molto più leggera.
@@ -7,7 +11,7 @@ App più semplice e molto più leggera.
 - Tolta la partita senza Narratore: era troppo complicata. Si gioca sempre con il Narratore e la sua guida. Una partita senza Narratore già iniziata continua con il Narratore.
 - Tolta la voce del Narratore. I suoni restano: gufo, ululato, gallo e campanella.
 - Tolti i Gemelli: facevano la stessa cosa dei Massoni. Nei mazzi pronti, nelle partite salvate e nelle statistiche al loro posto ci sono i Massoni.
-- Il file da installare pesa molto meno: da 3,5 MB a circa 1,3 MB.
+- Il file da installare pesa molto meno: da 3,5 MB a circa 1,2 MB.
 - Nella tappa Opzioni la barra in basso ricorda se il Narratore è principiante o esperto.
 
 ## [1.8.0] - 2026-11-07

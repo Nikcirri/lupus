@@ -42,18 +42,16 @@ save_log
 # Le schermate anche nel log, piccole e in base64: si possono guardare senza scaricare gli artefatti.
 for f in "$OUT"/*.png; do
   [ -f "$f" ] || continue
-  small="${f%.png}.jpg"
-  if command -v convert >/dev/null 2>&1; then
-    convert "$f" -resize 360x -quality 60 "$small" || continue
-  elif command -v ffmpeg >/dev/null 2>&1; then
-    ffmpeg -loglevel error -y -i "$f" -vf scale=360:-2 -q:v 7 "$small" || continue
-  else
-    continue
-  fi
-  echo "=== SCHERMATA $(basename "$small") ==="
-  base64 -w 100 "$small"
+  echo "=== SCHERMATA $(basename "$f") ==="
+  node scripts/png-small.mjs "$f" 3 || true
   echo "=== FINE SCHERMATA ==="
 done
+
+# Messaggi di Capacitor e del WebView (utili se qualcosa non va)
+echo "=== LOG DELL'APP ==="
+grep -E "Capacitor|chromium|AndroidRuntime|$PKG" "$OUT/logcat.txt" | grep -vE "Capacitor/Console.*Fetch|Gralloc|EGL" | tail -n 120 || true
+echo "=== FINE LOG ==="
+
 if grep -q "FATAL EXCEPTION" "$OUT/logcat.txt"; then
   echo "::error::L'app si è chiusa da sola (FATAL EXCEPTION nel log)"
   grep -A 30 "FATAL EXCEPTION" "$OUT/logcat.txt" | head -n 60

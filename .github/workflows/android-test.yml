@@ -27,12 +27,13 @@ jobs:
 
       - run: npm run verify
 
-      - name: Prepara l'app di prova (debug della pagina acceso, solo in questa prova)
+      - name: Prepara l'app di prova (debug della pagina e messaggi accesi, solo in questa prova)
         run: |
           node -e "
             const fs = require('fs');
             const c = JSON.parse(fs.readFileSync('capacitor.config.json', 'utf8'));
             c.android = { ...(c.android || {}), webContentsDebuggingEnabled: true };
+            c.loggingBehavior = 'production'; // messaggi di Capacitor nel log anche nella release di prova
             fs.writeFileSync('capacitor.config.json', JSON.stringify(c, null, 2));
           "
           npx cap sync android

@@ -929,11 +929,6 @@
       transform: scale(0.93);
     }
 
-    .np-action-btn.active-pin {
-      background: rgba(var(--rgb-ember), 0.28);
-      border-color: var(--ember);
-    }
-
     .np-action-btn.active-kill {
       background: rgba(var(--rgb-wolf), 0.35);
       border-color: var(--accent-danger);
@@ -1130,26 +1125,7 @@
     }
 
     /* Votazione al rogo */
-    .vote-row {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      background: var(--bg-main);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 10px;
-    }
 
-    .vote-voter {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
-    .vote-select {
-      min-height: 42px;
-    }
 
     .tally-row {
       position: relative;
@@ -1848,11 +1824,11 @@
       flex-shrink: 0;
     }
 
-    .np-actions.np-actions-3 {
-      grid-template-columns: repeat(3, 1fr);
+    .np-actions.np-actions-2 {
+      grid-template-columns: repeat(2, 1fr);
     }
 
-    .np-actions-3 .np-action-btn {
+    .np-actions-2 .np-action-btn {
       font-size: 0.85rem;
       font-weight: 700;
       color: var(--parchment);
@@ -2798,6 +2774,111 @@
       grid-template-columns: 1fr 1fr;
       gap: 8px;
     }
+
+    /* ---------- 1.8: votazione a tocchi ---------- */
+    .vote-picker {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      border-radius: var(--radius-md);
+      border: 1.5px solid rgba(var(--rgb-ember), 0.55);
+      background: rgba(var(--rgb-ember), 0.07);
+    }
+
+    .vote-picker-head {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 1.02rem;
+    }
+
+    .vote-picker .btn-sm {
+      align-self: flex-start;
+    }
+
+    .vote-voters {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 6px;
+    }
+
+    .vote-voter-chip {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto auto;
+      column-gap: 8px;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line);
+      background: var(--ink-deep);
+      color: var(--parchment);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      min-width: 0;
+    }
+
+    .vote-voter-chip .avatar {
+      grid-row: 1 / 3;
+    }
+
+    .vote-voter-chip.current {
+      border-color: var(--ember);
+      background: rgba(var(--rgb-ember), 0.12);
+    }
+
+    .vote-voter-name {
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .vote-voter-target {
+      font-size: 0.8rem;
+      color: var(--mist);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .vote-voter-chip.voted .vote-voter-target {
+      color: var(--parchment);
+    }
+
+    .tally-bonus {
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--mist);
+    }
+
+    /* ---------- 1.8: posti a tavola e statistiche ---------- */
+    .player-chip {
+      padding-left: 0;
+      gap: 4px;
+    }
+
+    .player-chip .player-chip-name {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .player-chip.dragging {
+      border-color: var(--moon);
+      background: var(--surface-raised);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+      position: relative;
+      z-index: 2;
+    }
+
+    .deck-stats,
+    .preset-stats {
+      font-size: 0.85rem;
+      color: var(--sky);
+    }
   </style>
 </head>
 <body>
@@ -2873,7 +2954,7 @@
         <div class="card-header">
           <div>
             <div class="card-title"><span>👥 Giocatori al tavolo (<span id="playerCountLabel">0</span>)</span></div>
-            <div class="card-subtitle">Chi riceve un ruolo • Minimo 5 giocatori</div>
+            <div id="playersSubtitle" class="card-subtitle">Chi riceve un ruolo • Minimo 5 giocatori</div>
           </div>
           <button class="btn btn-sm btn-danger" id="btnClearPlayers" onclick="confirmClearPlayers()" style="display:none;">
             Svuota
@@ -2907,6 +2988,7 @@
           <div class="balance-track" aria-hidden="true"><span id="deckBalanceMarker" class="balance-marker"></span></div>
           <div class="balance-ends" aria-hidden="true"><span>🐺 Lupi</span><span>Villaggio 🏡</span></div>
           <div id="deckBalanceHint" class="card-subtitle"></div>
+          <div id="deckStats" class="deck-stats" style="display: none;"></div>
         </div>
 
         <div class="tabs">
@@ -2960,6 +3042,7 @@
             <span>Giocano tutti. Di notte il telefono passa di mano in mano e ognuno fa la sua mossa in segreto.</span>
           </button>
         </div>
+        <div id="seatOrderHint" class="guide-info" style="display: none;"></div>
       </div>
 
       <!-- Regole e varianti della partita -->
@@ -3045,7 +3128,7 @@
         </div>
         <div class="level-switch narrator-only" role="group" aria-label="Livello del Narratore">
           <button class="level-choice" data-level="beginner" onclick="setNarratorLevel('beginner')"><strong>🎓 Principiante</strong><span>consigli a ogni passo</span></button>
-          <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale</span></button>
+          <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale, va avanti da solo</span></button>
         </div>
         <div class="switch-row">
           <div class="switch-info">
@@ -3377,7 +3460,7 @@
       <div class="card-title" style="font-size: 1.05rem;">🎙️ Il Narratore</div>
       <div class="level-switch narrator-only" role="group" aria-label="Livello del Narratore">
         <button class="level-choice" data-level="beginner" onclick="setNarratorLevel('beginner')"><strong>🎓 Principiante</strong><span>consigli a ogni passo</span></button>
-        <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale</span></button>
+        <button class="level-choice" data-level="expert" onclick="setNarratorLevel('expert')"><strong>⚡ Esperto</strong><span>solo l'essenziale, va avanti da solo</span></button>
       </div>
 
       <div class="switch-row" style="background: var(--bg-main); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
@@ -3499,6 +3582,8 @@
         <label class="form-label" for="rfMarkText">Frase del mattino</label>
         <input type="text" id="rfMarkText" class="input-field" maxlength="200" placeholder="Es. «Qualcuno ha visto un'ombra davanti alla casa di {nome}!»">
         <div class="card-subtitle">Scrivi {nome} dove va il nome del giocatore scelto.</div>
+        <label class="form-label" for="rfMarkEffect">Cosa succede a chi riceve il segno</label>
+        <select id="rfMarkEffect" class="select-field"></select>
       </div>
 
       <details id="rfAdvanced" class="form-advanced">
@@ -3592,6 +3677,12 @@
       </p>
       <button class="btn" onclick="openWhatsNewModal('all')">📜 Novità delle ultime versioni</button>
       <button class="btn" onclick="openWelcome()">👋 Come funziona Lupus</button>
+
+      <div class="info-share">
+        <div class="switch-title">📊 Le vostre partite</div>
+        <div id="infoStats" class="card-subtitle"></div>
+        <button id="btnStatsReset" class="btn btn-sm" onclick="resetStats()">Azzera le statistiche</button>
+      </div>
 
       <div class="info-share">
         <div class="switch-title">💾 Backup</div>
@@ -3705,12 +3796,13 @@
         <div id="voteTitle" class="card-title">🗳️ Votazione al rogo</div>
         <button class="icon-btn" onclick="closeVoteModal()" aria-label="Chiudi">✖</button>
       </div>
-      <p class="card-subtitle">Chiedi a ognuno chi vuole mandare al rogo. Votano i vivi e il Fantasma 👻; il voto del Sindaco 🎖️ vale doppio.</p>
+      <p class="card-subtitle">Chiedi a ognuno, uno alla volta, chi vuole mandare al rogo e tocca il nome. Votano i vivi e il Fantasma 👻; chi ha il voto doppio vale 2.</p>
       <div id="voteProgress" class="badge" style="align-self: flex-start;">Hanno votato 0</div>
       <div id="voteTally" style="display: flex; flex-direction: column; gap: 6px;"></div>
       <div id="voteActions" style="display: flex; flex-direction: column; gap: 8px;"></div>
-      <div class="role-info-label">Voti dei giocatori</div>
-      <div id="voteVotersList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      <div id="votePicker" class="vote-picker"></div>
+      <div class="role-info-label">Chi ha votato chi (tocca un nome per cambiare il suo voto)</div>
+      <div id="voteVotersList" class="vote-voters"></div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
         <button class="btn btn-sm" style="flex: 1;" onclick="resetVotes()">🔄 Azzera i voti</button>
         <button id="btnVoteRestart" class="btn btn-sm" style="flex: 1; display: none;" onclick="restartVoteFromScratch()">↩️ Annulla ballottaggio</button>

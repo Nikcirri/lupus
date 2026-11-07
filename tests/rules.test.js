@@ -8,7 +8,7 @@ const code = readFileSync(new URL('../public/rules.js', import.meta.url), 'utf8'
 const ctx = vm.createContext({ TextEncoder, TextDecoder, btoa, atob });
 vm.runInContext(
   code +
-    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, TIE_RULE_KEYS, tieOutcome, roleRevealLine, deckAnnouncement, SURPRISE_EVENTS, findSurpriseEvent, eventEffects, drawSurpriseEvent, pickSurpriseEvent, splitPhrase, speechText, secondTargetKey, wolvesTargetIds, ANY_WOLF_VICTIM, pickFromVotes, passOrder, backupFileName, buildBackup, parseBackup, sanitizeBackupSettings, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
+    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, TIE_RULE_KEYS, tieOutcome, roleRevealLine, deckAnnouncement, SURPRISE_EVENTS, findSurpriseEvent, eventEffects, drawSurpriseEvent, pickSurpriseEvent, splitPhrase, speechText, secondTargetKey, wolvesTargetIds, ANY_WOLF_VICTIM, pickFromVotes, passOrder, backupFileName, buildBackup, parseBackup, sanitizeBackupSettings, roleMarkEffect, markVoteBonus, VOTE_ABSTAIN, deckKey, buildMatchRecord, upsertMatchRecord, removeMatchRecord, summarizeRecords, refreshOutdatedRoleTexts, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
   ctx
 );
 const R = ctx.R;
@@ -696,4 +696,70 @@ test('backup: andata e ritorno, dati ripuliti', () => {
   assert.match(R.parseBackup('{"format":"altro"}').error, /non è un file di backup/);
   assert.match(R.parseBackup(JSON.stringify({ ...file, version: 99 })).error, /versione più nuova/);
   assert.match(R.parseBackup(JSON.stringify({ ...file, data: { roles: [] } })).error, /ruoli validi/);
+});
+
+// ---------- 1.8: Gufo, astensione, statistiche ----------
+test('Gufo: chi sceglie parte con un voto contro al rogo', () => {
+  assert.equal(R.roleMarkEffect(findRole('gufo')), 'voteAgainst');
+  assert.equal(R.roleMarkEffect(findRole('fioraio')), 'none');
+  assert.equal(R.roleMarkEffect({ id: 'gufo' }), 'voteAgainst');
+  const bonus = R.markVoteBonus([{ playerId: 'c', roleId: 'gufo' }, { playerId: 'd', roleId: 'fioraio' }], findRole);
+  assert.deepEqual({ ...bonus }, { c: 1 });
+  const players = [player('a', 'lupo'), player('b', 'contadino'), player('c', 'contadino'), player('d', 'contadino')];
+  const t = R.tallyVotes(players, { a: 'b' }, findRole, null, bonus);
+  assert.deepEqual([...t.totals].map(r => `${r.playerId}=${r.votes}`).slice(0, 2), ['b=1', 'c=1']);
+  assert.equal(t.totals.find(r => r.playerId === 'c').bonus, 1);
+  assert.deepEqual([...t.leaders].sort(), ['b', 'c']);
+  assert.equal(t.castCount, 1);
+  // il voto in più vale solo per chi si può votare
+  assert.equal(R.tallyVotes(players, {}, findRole, ['a', 'b'], bonus).maxVotes, 0);
+  assert.match(R.roleAbilityNotes(findRole('gufo')).join(' '), /1 voto contro/);
+  const shared = R.decodeRolesShare(R.encodeRolesShare([findRole('gufo')])).roles[0];
+  assert.equal(shared.markEffect, 'voteAgainst');
+  assert.equal(R.isRoleCustomized({ ...findRole('gufo'), markEffect: 'none' }, R.DEFAULT_ROLES), true);
+});
+
+test('votazione: chi si astiene ha votato, ma non dà voti', () => {
+  const players = [player('a', 'lupo'), player('b', 'contadino'), player('c', 'contadino')];
+  const t = R.tallyVotes(players, { a: R.VOTE_ABSTAIN, b: 'a' }, findRole, null);
+  assert.equal(t.castCount, 2);
+  assert.equal(t.maxVotes, 1);
+  assert.deepEqual([...t.leaders], ['a']);
+});
+
+test('statistiche delle partite', () => {
+  assert.equal(R.deckKey({ veggente: 1, lupo: 2, contadino: 0 }), 'lupo:2,veggente:1');
+  assert.equal(R.deckKey({ lupo: 2, veggente: 1 }), R.deckKey({ veggente: 1, lupo: 2 }));
+  const match = { id: 'm1', initialDeckMap: { lupo: 1, contadino: 4 }, players: [player('a', 'lupo'), player('g', 'giullare')], mode: 'auto', turn: 3 };
+  const rec = R.buildMatchRecord(match, { type: 'solo', playerId: 'g' }, 1000);
+  assert.equal(rec.soloRoleId, 'giullare');
+  assert.equal(rec.mode, 'auto');
+  assert.equal(rec.deckKey, 'contadino:4,lupo:1');
+  let list = R.upsertMatchRecord([], rec);
+  list = R.upsertMatchRecord(list, { ...rec, id: 'm2', winner: 'village', soloRoleId: '' });
+  list = R.upsertMatchRecord(list, { ...rec, winner: 'wolves', soloRoleId: '' }); // stessa partita: si aggiorna
+  assert.equal(list.length, 2);
+  assert.equal(list[0].id, 'm1');
+  assert.deepEqual({ ...R.summarizeRecords(list, null) }, { played: 2, village: 1, wolves: 1, solo: 0 });
+  assert.equal(R.summarizeRecords(list, 'altro').played, 0);
+  assert.equal(R.removeMatchRecord(list, 'm1').length, 1);
+  assert.equal(R.upsertMatchRecord(Array.from({ length: 5 }, (_, i) => ({ ...rec, id: `x${i}` })), rec, 3).length, 3);
+  // le statistiche viaggiano nel backup
+  const file = R.buildBackup({ roles: R.DEFAULT_ROLES, players: [], settings: {}, knownPlayers: [], stats: [...list, { id: '', winner: 'boh' }] }, '2026-11-07T00:00:00Z', '1.8.0');
+  assert.equal(R.parseBackup(JSON.stringify(file)).data.stats.length, 2);
+});
+
+test('testi vecchi del Gufo aggiornati, quelli scritti da chi gioca no', () => {
+  const oldGufo = {
+    ...findRole('gufo'),
+    whatYouDo: 'Ogni notte indichi un giocatore: al mattino il Narratore annuncia che il Gufo l\'ha scelto e quel giocatore sarà tra i candidati al rogo. Al Veggente risulti NON lupo e non conosci i lupi.',
+    markText: '«Stanotte il Gufo ha scelto {nome}: oggi sarà tra i candidati al rogo.»',
+    narratorNote: 'La mia nota personale.'
+  };
+  const res = R.refreshOutdatedRoleTexts([oldGufo, findRole('lupo')]);
+  assert.equal(res.changed, true);
+  assert.match(res.roles[0].whatYouDo, /parte con un voto contro/);
+  assert.match(res.roles[0].markText, /parte con un voto contro/);
+  assert.equal(res.roles[0].narratorNote, 'La mia nota personale.');
+  assert.equal(R.refreshOutdatedRoleTexts([findRole('gufo')]).changed, false);
 });

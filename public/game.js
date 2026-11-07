@@ -10,7 +10,8 @@ const STORAGE_KEYS = {
   MATCH: 'lupus_narratore_match_v1',
   UPDATES: 'lupus_updates_v1',
   KNOWN_PLAYERS: 'lupus_narratore_known_players_v1', // nomi di chi ha già giocato (suggerimenti)
-  SEEN_VERSION: 'lupus_narratore_seen_version_v1'    // ultima versione di cui si sono viste le novità
+  SEEN_VERSION: 'lupus_narratore_seen_version_v1',   // ultima versione di cui si sono viste le novità
+  STATS: 'lupus_narratore_stats_v1'                  // chi ha vinto le partite giocate (statistiche)
 };
 
 const DEFAULT_DAY_TIMER_SECONDS = 180;
@@ -243,6 +244,8 @@ function migrateMatch(match) {
   ['revealDead', 'deckAnnounced', 'surpriseEvents'].forEach(k => { if (typeof match[k] !== 'boolean') match[k] = false; });
   if (match.event && !findSurpriseEvent(match.event.id)) match.event = null;
   if (match.mode !== 'auto') match.mode = 'narrator';
+  if (!match.id) match.id = `m${Date.now()}`;
+  match.players.forEach(p => { delete p.extraPin; }); // le note sui giocatori non ci sono più (1.8)
 }
 
 // Partite salvate con le versioni 1.0-1.2: i segnalini diventano le scelte della modalità guidata.
@@ -282,6 +285,11 @@ function migrateLegacyMatch(match) {
 // e le capacità che mancano (azione notturna, regole, vittoria, caratteristiche...).
 function migrateRoles() {
   let changed = false;
+  const refreshed = refreshOutdatedRoleTexts(rolesDB);
+  if (refreshed.changed) {
+    rolesDB = refreshed.roles;
+    changed = true;
+  }
   const res = addNewDefaultRoles(rolesDB, appSettings.knownDefaultRoleIds);
   if (res.added.length) {
     rolesDB = res.roles;
@@ -302,7 +310,7 @@ function migrateRoles() {
   if (changed) saveRolesToStorage();
 }
 
-const ROLE_CAPABILITY_FIELDS = ['nightAction', 'actionRules', 'wakesWithWolves', 'deathAction', 'victory', 'traits', 'markText'];
+const ROLE_CAPABILITY_FIELDS = ['nightAction', 'actionRules', 'wakesWithWolves', 'deathAction', 'victory', 'traits', 'markText', 'markEffect'];
 
 function completeRoleCapabilities(r) {
   return {
@@ -312,7 +320,8 @@ function completeRoleCapabilities(r) {
     deathAction: roleDeathAction(r),
     victory: roleVictory(r),
     traits: roleTraits(r),
-    markText: typeof r.markText === 'string' ? r.markText : (roleNightAction(r) === 'mark' ? roleMarkText(r) : '')
+    markText: typeof r.markText === 'string' ? r.markText : (roleNightAction(r) === 'mark' ? roleMarkText(r) : ''),
+    markEffect: roleMarkEffect(r)
   };
 }
 
@@ -470,6 +479,7 @@ function renderSetupScreen() {
 
 function renderPlayerChips() {
   const count = setupPlayers.length;
+  if (document.getElementById('seatOrderHint')) syncPlayModeUI();
   document.getElementById('playerCountLabel').textContent = count;
   document.getElementById('btnClearPlayers').style.display = count > 0 ? 'inline-flex' : 'none';
 
@@ -488,14 +498,26 @@ function renderPlayerChips() {
   setupPlayers.forEach((name, idx) => {
     const row = document.createElement('div');
     row.className = 'player-chip';
+    row.dataset.id = name;
     row.innerHTML = `
+      <span class="drag-handle" onpointerdown="startSortDrag(event, 'playerChipsList')" title="Tieni premuto e trascina per cambiare posto" aria-hidden="true">☰</span>
       <div class="player-chip-name">
         ${avatarHtml(name, colors[idx])}
         <span>${escapeHtml(name)}</span>
       </div>
-      <button class="player-chip-remove" onclick="removePlayerAt(${idx})" title="Rimuovi">✖</button>
+      <button class="player-chip-remove" onclick="removePlayerAt(${idx})" title="Rimuovi" aria-label="Rimuovi ${escapeHtml(name)}">✖</button>
     `;
     container.appendChild(row);
+  });
+}
+
+// Nuovo ordine dei giocatori (trascinando ☰): è l'ordine dei posti a tavola
+function commitPlayerOrder(names) {
+  doWithUndo('👥 Ordine dei posti aggiornato', () => {
+    setupPlayers = names.slice();
+    savePlayersToStorage();
+    renderPlayerChips();
+    renderSetupStepper();
   });
 }
 
@@ -754,7 +776,9 @@ function renderPresetsList() {
   }
 
   const presets = PRESETS_BY_COUNT[count] || [];
+  const stats = loadStats();
   presets.forEach((preset, i) => {
+    const played = summarizeRecords(stats, deckKey(preset.roles));
     const isSelected = appSettings.selectedPresetCode === preset.code && isDeckEqualToPreset(preset.roles);
     const missingRoles = getPresetMissingRoles(preset);
     const roleStrings = Object.entries(preset.roles).map(([rId, qty]) => {
@@ -771,6 +795,7 @@ function renderPresetsList() {
         <span class="preset-turns">⏱️ ${preset.turns}</span>
       </div>
       ${preset.desc ? `<div class="preset-desc">${escapeHtml(preset.desc)}</div>` : ''}
+      ${played.played ? `<div class="preset-stats">📊 ${escapeHtml(statsSummaryText(played))}</div>` : ''}
       <div class="preset-roles">${roleStrings}</div>
       ${missingRoles.length ? `<div class="card-subtitle" style="color: var(--accent-warning);">⚠️ Usa ruoli che hai eliminato (${escapeHtml(missingRoles.join(', '))}). Ripristinali da "Gestisci i ruoli".</div>` : ''}
     `;
@@ -969,6 +994,14 @@ function setPlayMode(mode) {
 
 function syncPlayModeUI() {
   const auto = isAutoPlayMode();
+  document.getElementById('playersSubtitle').textContent = auto
+    ? 'Nell\'ordine in cui siete seduti (trascina ☰ per cambiare) • Minimo 5'
+    : 'Chi riceve un ruolo • Minimo 5 giocatori';
+  const order = document.getElementById('seatOrderHint');
+  order.style.display = auto ? 'block' : 'none';
+  order.innerHTML = auto
+    ? `📍 Di notte il telefono passa in quest'ordine: <strong>${escapeHtml(setupPlayers.join(' → ') || '—')}</strong>. Deve essere l'ordine in cui siete seduti: se non lo è, torna ai Giocatori e trascina i nomi con ☰.`
+    : '';
   document.querySelectorAll('.mode-choice').forEach(btn => {
     const active = btn.dataset.mode === (auto ? 'auto' : 'narrator');
     btn.classList.toggle('active', active);
@@ -1025,6 +1058,10 @@ function renderDeckBalance(deckTotal) {
     'village-strong': 'Per pareggiare aggiungi un lupo o un aiutante dei lupi (es. Gufo, Indemoniato) o togli qualche potere al villaggio.'
   };
   box.style.display = 'flex';
+  const played = summarizeRecords(loadStats(), deckKey(appSettings.selectedDeck));
+  const statsEl = document.getElementById('deckStats');
+  statsEl.style.display = played.played ? 'block' : 'none';
+  statsEl.textContent = played.played ? `📊 Con questo mazzo avete giocato ${statsSummaryText(played)}` : '';
   document.getElementById('deckBalanceLabel').textContent = `${balance.icon} ${balance.label}`;
   document.getElementById('deckBalanceMarker').style.left = `${Math.round(balance.position * 100)}%`;
   document.getElementById('deckBalanceHint').textContent = hints[balance.level];
@@ -1100,7 +1137,6 @@ function renderEditorRolesList() {
 }
 
 /* ---------- Ordine di chiamata della notte (trascina ☰ oppure ▲▼) ---------- */
-let nightOrderDrag = null;
 
 function renderNightOrderList() {
   const list = document.getElementById('nightOrderList');
@@ -1111,7 +1147,7 @@ function renderNightOrderList() {
   }
   list.innerHTML = roles.map((r, i) => `
     <li class="night-order-item" data-id="${escapeHtml(r.id)}">
-      <span class="drag-handle" onpointerdown="startNightOrderDrag(event)" title="Tieni premuto e trascina" aria-hidden="true">☰</span>
+      <span class="drag-handle" onpointerdown="startSortDrag(event, 'nightOrderList')" title="Tieni premuto e trascina" aria-hidden="true">☰</span>
       <span class="night-order-num">${i + 1}</span>
       <span class="night-order-text">
         <span class="night-order-name">${escapeHtml(r.icon)} ${escapeHtml(r.name)}</span>
@@ -1124,8 +1160,15 @@ function renderNightOrderList() {
     </li>`).join('');
 }
 
-function getNightOrderDomIds() {
-  return Array.from(document.querySelectorAll('#nightOrderList .night-order-item')).map(li => li.dataset.id);
+/* ---------- Riordino trascinando ☰ (ordine di chiamata della notte, posti a tavola) ---------- */
+let sortDrag = null;
+const SORTABLE_LISTS = {
+  nightOrderList: { item: '.night-order-item', onMove: renumberNightOrderDom, onCommit: ids => commitNightOrder(ids) },
+  playerChipsList: { item: '.player-chip', onMove: null, onCommit: names => commitPlayerOrder(names) }
+};
+
+function getSortDomIds(listId) {
+  return Array.from(document.querySelectorAll(`#${listId} ${SORTABLE_LISTS[listId].item}`)).map(el => el.dataset.id);
 }
 
 function renumberNightOrderDom() {
@@ -1134,29 +1177,30 @@ function renumberNightOrderDom() {
   });
 }
 
-function startNightOrderDrag(e) {
+function startSortDrag(e, listId) {
+  const config = SORTABLE_LISTS[listId];
   const handle = e.currentTarget;
-  const item = handle.closest('.night-order-item');
-  if (!item || nightOrderDrag) return;
+  const item = handle.closest(config.item);
+  if (!item || sortDrag) return;
   e.preventDefault();
   try { handle.setPointerCapture(e.pointerId); } catch (err) {}
   item.classList.add('dragging');
   vibrate('tap');
-  nightOrderDrag = { item, handle, startIds: getNightOrderDomIds() };
-  handle.addEventListener('pointermove', onNightOrderDragMove);
-  handle.addEventListener('pointerup', endNightOrderDrag);
-  handle.addEventListener('pointercancel', endNightOrderDrag);
-  handle.addEventListener('lostpointercapture', endNightOrderDrag);
+  sortDrag = { listId, item, handle, startIds: getSortDomIds(listId) };
+  handle.addEventListener('pointermove', onSortDragMove);
+  handle.addEventListener('pointerup', endSortDrag);
+  handle.addEventListener('pointercancel', endSortDrag);
+  handle.addEventListener('lostpointercapture', endSortDrag);
 }
 
-function onNightOrderDragMove(e) {
-  if (!nightOrderDrag) return;
-  const { item } = nightOrderDrag;
-  const list = item.parentElement;
+function onSortDragMove(e) {
+  if (!sortDrag) return;
+  const { item, listId } = sortDrag;
+  const config = SORTABLE_LISTS[listId];
   const y = e.clientY;
-  const others = Array.from(list.querySelectorAll('.night-order-item')).filter(li => li !== item);
-  const before = others.find(li => {
-    const box = li.getBoundingClientRect();
+  const others = Array.from(item.parentElement.querySelectorAll(config.item)).filter(el => el !== item);
+  const before = others.find(el => {
+    const box = el.getBoundingClientRect();
     return y < box.top + box.height / 2;
   }) || null;
   // Si spostano le altre righe e non quella trascinata: toglierla dalla pagina interromperebbe il trascinamento
@@ -1167,29 +1211,29 @@ function onNightOrderDragMove(e) {
       moved = true;
     }
   } else {
-    while (item.nextElementSibling && item.nextElementSibling !== before) {
+    while (item.nextElementSibling && item.nextElementSibling !== before && item.nextElementSibling.matches(config.item)) {
       item.before(item.nextElementSibling);
       moved = true;
     }
   }
-  if (moved) renumberNightOrderDom();
+  if (moved && config.onMove) config.onMove();
   // vicino ai bordi dello schermo la pagina scorre da sola
   if (y < 90) window.scrollBy(0, -10);
   else if (y > window.innerHeight - 90) window.scrollBy(0, 10);
 }
 
-function endNightOrderDrag(e) {
-  if (!nightOrderDrag) return;
-  const { item, handle, startIds } = nightOrderDrag;
-  handle.removeEventListener('pointermove', onNightOrderDragMove);
-  handle.removeEventListener('pointerup', endNightOrderDrag);
-  handle.removeEventListener('pointercancel', endNightOrderDrag);
-  handle.removeEventListener('lostpointercapture', endNightOrderDrag);
+function endSortDrag(e) {
+  if (!sortDrag) return;
+  const { item, handle, startIds, listId } = sortDrag;
+  handle.removeEventListener('pointermove', onSortDragMove);
+  handle.removeEventListener('pointerup', endSortDrag);
+  handle.removeEventListener('pointercancel', endSortDrag);
+  handle.removeEventListener('lostpointercapture', endSortDrag);
   try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
   item.classList.remove('dragging');
-  nightOrderDrag = null;
-  const ids = getNightOrderDomIds();
-  if (ids.join('|') !== startIds.join('|')) commitNightOrder(ids);
+  sortDrag = null;
+  const ids = getSortDomIds(listId);
+  if (ids.join('|') !== startIds.join('|')) SORTABLE_LISTS[listId].onCommit(ids);
 }
 
 function moveNightOrder(roleId, delta) {
@@ -1222,13 +1266,14 @@ function openRoleFormModal(roleId) {
   fillSelectOptions('rfWake', VALID_WAKE_TIMINGS.map(k => [k, WAKE_TIMING_LABELS[k].short]));
   fillSelectOptions('rfDeathAction', DEATH_ACTION_KEYS.map(k => [k, DEATH_ACTIONS[k].label]));
   fillSelectOptions('rfVictory', VICTORY_KEYS.map(k => [k, VICTORY_TYPES[k].label]));
+  fillSelectOptions('rfMarkEffect', MARK_EFFECT_KEYS.map(k => [k, MARK_EFFECTS[k].label]));
   document.getElementById('rfTraits').innerHTML = TRAIT_KEYS.map(k =>
     `<label class="check-row"><input type="checkbox" id="rfTrait_${k}"> ${escapeHtml(TRAIT_LABELS[k])}</label>`).join('');
 
   const r = isEdit ? getRoleById(roleId) : {
     id: '', icon: '🧙‍♀️', name: '', faction: 'Villaggio', whatYouDo: '', howYouWin: 'Vinci col villaggio.',
     wakeTiming: 'ogni_notte', narratorPhrase: '', narratorNote: '', isPair: false,
-    nightAction: 'none', actionRules: { notSelf: true }, wakesWithWolves: false, deathAction: 'none', victory: 'faction', traits: {}, markText: ''
+    nightAction: 'none', actionRules: { notSelf: true }, wakesWithWolves: false, deathAction: 'none', victory: 'faction', traits: {}, markText: '', markEffect: 'none'
   };
   document.getElementById('rfId').value = r.id;
   document.getElementById('rfIcon').value = r.icon;
@@ -1246,6 +1291,7 @@ function openRoleFormModal(roleId) {
   const traits = roleTraits(r);
   TRAIT_KEYS.forEach(k => { document.getElementById(`rfTrait_${k}`).checked = !!traits[k]; });
   document.getElementById('rfMarkText').value = roleNightAction(r) === 'mark' ? roleMarkText(r) : '';
+  document.getElementById('rfMarkEffect').value = roleMarkEffect(r);
   // Le regole avanzate si aprono da sole se il ruolo ne usa qualcuna
   document.getElementById('rfAdvanced').open = roleWakesWithWolves(r) || roleDeathAction(r) !== 'none' || roleVictory(r) !== 'faction' || TRAIT_KEYS.some(k => traits[k]);
   fillRoleFormAction(roleNightAction(r), roleActionRules(r));
@@ -1328,7 +1374,8 @@ function saveRoleFromForm() {
     deathAction: document.getElementById('rfDeathAction').value,
     victory: document.getElementById('rfVictory').value,
     traits,
-    markText: nightAction === 'mark' ? document.getElementById('rfMarkText').value.trim() : ''
+    markText: nightAction === 'mark' ? document.getElementById('rfMarkText').value.trim() : '',
+    markEffect: nightAction === 'mark' ? document.getElementById('rfMarkEffect').value : 'none'
   };
   if (nightAction === 'mark' && !capabilities.markText.includes('{nome}')) {
     showToast('Nella frase del mattino scrivi {nome} dove va il nome del giocatore scelto.', 'warn');
@@ -1434,6 +1481,7 @@ function startDistributionPhase() {
   saveKnownPlayers(rememberPlayerNames(loadKnownPlayers(), setupPlayers, Date.now()));
 
   activeMatch = {
+    id: `m${Date.now()}`,   // per le statistiche
     status: 'distributing',
     distIndex: 0,
     turn: 1,
@@ -1464,7 +1512,6 @@ function startDistributionPhase() {
       originalRoleId: deckArray[idx],
       isDead: false,
       isGhost: false,
-      extraPin: false,
       deathCause: null, // 'notte' | 'rogo' | 'altro'
       diedOnTurn: null
     }))
@@ -1609,7 +1656,60 @@ function evaluateVictoryCondition() {
 
 let lastVictoryText = null;
 
+/* ---------- Statistiche delle partite ---------- */
+function loadStats() {
+  try {
+    const list = JSON.parse(localStorage.getItem(STORAGE_KEYS.STATS) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveStats(list) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(list));
+  } catch (e) {}
+}
+
+// Quando la partita ha un vincitore la si ricorda; se la vittoria viene annullata, si toglie
+function syncMatchStats() {
+  if (!activeMatch || activeMatch.status !== 'playing') return;
+  const win = (activeMatch.pendingDeathActions || []).length ? null : evaluateVictory(activeMatch.players, findRoleOrNull);
+  const stats = loadStats();
+  const existing = stats.find(r => r.id === activeMatch.id);
+  if (win) {
+    const record = buildMatchRecord(activeMatch, win, existing ? existing.date : Date.now());
+    if (!existing || existing.winner !== record.winner || existing.soloRoleId !== record.soloRoleId) saveStats(upsertMatchRecord(stats, record));
+  } else if (existing) {
+    saveStats(removeMatchRecord(stats, activeMatch.id));
+  }
+}
+
+function statsSummaryText(summary) {
+  const parts = [`🏡 Villaggio ${summary.village}`, `🐺 Lupi ${summary.wolves}`];
+  if (summary.solo) parts.push(`🃏 Solitari ${summary.solo}`);
+  return `${summary.played} ${summary.played === 1 ? 'partita' : 'partite'}: ${parts.join(' · ')}`;
+}
+
+function renderStatsInfo() {
+  const summary = summarizeRecords(loadStats(), null);
+  document.getElementById('infoStats').textContent = summary.played
+    ? statsSummaryText(summary)
+    : 'Ancora nessuna partita finita: le statistiche arrivano alla prima vittoria.';
+  document.getElementById('btnStatsReset').style.display = summary.played ? 'inline-flex' : 'none';
+}
+
+function resetStats() {
+  doWithUndo('📊 Statistiche azzerate', () => {
+    saveStats([]);
+    renderStatsInfo();
+    renderSetupScreen();
+  });
+}
+
 function renderVictoryBanner() {
+  syncMatchStats();
   const banner = document.getElementById('victoryBanner');
   const winInfo = evaluateVictoryCondition();
 
@@ -2151,6 +2251,24 @@ function renderMediumInfo() {
   </div>`;
 }
 
+// Narratore esperto: dopo la scelta si passa da soli al ruolo dopo (non per chi aspetta una risposta)
+const EXPERT_AUTO_ADVANCE_KINDS = ['wolves', 'protect', 'kill', 'mark', 'copy', 'note'];
+const EXPERT_ADVANCE_MS = 800;
+let expertAdvanceTimer = null;
+
+function scheduleExpertAdvance(stepKey) {
+  clearTimeout(expertAdvanceTimer);
+  if (!isExpertNarrator() || isAutoMatch()) return;
+  const step = getGuidePlan().find(st => st.key === stepKey);
+  if (!step || !EXPERT_AUTO_ADVANCE_KINDS.includes(step.kind) || getStepChosenIds(step).length < (step.targets || 1)) return;
+  const snapshot = JSON.stringify(getStepChosenIds(step));
+  expertAdvanceTimer = setTimeout(() => {
+    if (!activeMatch || activeMatch.phase !== 'night' || activeMatch.guideKey !== stepKey) return;
+    const again = getGuidePlan().find(st => st.key === stepKey);
+    if (again && JSON.stringify(getStepChosenIds(again)) === snapshot) guideGo(1);
+  }, EXPERT_ADVANCE_MS);
+}
+
 // targets = quante persone sceglie il passo (2 per i lupi con la Luna rossa)
 function selectGuideTarget(stepKey, playerId, targets = 1) {
   vibrate('tap');
@@ -2182,6 +2300,7 @@ function selectGuideTarget(stepKey, playerId, targets = 1) {
   saveMatchToStorage();
   renderNarratorGuide();
   renderNarratorPlayersList();
+  scheduleExpertAdvance(stepKey);
 }
 
 function describeDeathCause(cause, roleIds) {
@@ -2338,8 +2457,11 @@ function renderVoteStep() {
     none: 'con un pareggio nessuno va al rogo',
     decider: 'con un pareggio decide chi ha il voto doppio'
   };
+  const bonus = currentVoteBonus(getCurrentVote());
+  const bonusNames = Object.keys(bonus).map(id => (activeMatch.players.find(p => p.id === id && !p.isDead) || {}).name).filter(Boolean);
   return `
     ${phraseHtml(escapeHtml(VOTE_PHRASE))}
+    ${bonusNames.length ? `<div class="guide-info">🦉 ${escapeHtml(joinNames(bonusNames))} parte con un voto contro (scelto stanotte).</div>` : ''}
     <button class="btn btn-warning" onclick="openVoteModal()">🗳️ Apri la votazione</button>
     <div class="guide-muted guide-help">L'app conta i voti (il voto doppio vale 2, il Fantasma vota); ${tieLabels[getTieRule()]}. Se oggi nessuno va al rogo, tocca Avanti.</div>
     ${guideTip('vote')}
@@ -2429,7 +2551,6 @@ function advanceToNight() {
     }
   }
   activeMatch.vote = null;
-  activeMatch.players.forEach(p => { p.extraPin = false; });
 
   saveMatchToStorage();
   narratorTab = 'guide';
@@ -2485,6 +2606,34 @@ function markNightDeath(playerId) {
 ========================================================================= */
 const AUTO_NIGHTFALL_PHRASE = '«Cala la notte: il telefono passerà a tutti, uno alla volta. Chi non ce l\'ha chiude gli occhi.»';
 const AUTO_DONE_PHRASE = '«Tutti hanno fatto la loro mossa. Appoggiate il telefono al centro: il villaggio si sveglia!»';
+// Ognuno tiene il telefono almeno questo tempo: chi ha un potere e chi no ci mettono uguale
+const PASS_MIN_SECONDS = 6;
+let passActionStart = 0;
+let passTimer = null;
+
+function passSecondsLeft() {
+  return Math.max(0, Math.ceil(PASS_MIN_SECONDS - (Date.now() - passActionStart) / 1000));
+}
+
+function stopPassTimer() {
+  if (passTimer) clearInterval(passTimer);
+  passTimer = null;
+}
+
+// Aggiorna il pulsante "Fatto": acceso solo con la mossa fatta e dopo il tempo minimo
+function updatePassDoneButton() {
+  const btn = document.getElementById('btnPassDone');
+  if (!btn || !activeMatch || !activeMatch.pass) {
+    stopPassTimer();
+    return;
+  }
+  const me = passPlayer(activeMatch.pass);
+  const complete = me ? buildPassAction(me).complete : false;
+  const left = passSecondsLeft();
+  btn.disabled = !complete || left > 0;
+  btn.textContent = !complete ? '✋ Fai la tua mossa' : left > 0 ? `⏳ Fatto tra ${left}...` : '✅ Fatto: copri e passa il telefono';
+  if (left === 0) stopPassTimer();
+}
 
 function isAutoMatch() {
   return !!activeMatch && activeMatch.mode === 'auto';
@@ -2712,7 +2861,8 @@ function renderPassNight() {
     document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · telefono ${pass.index + 1} di ${total}`;
     const action = buildPassAction(player);
     html += action.html;
-    nav = `<div class="guide-nav"><button class="btn btn-success guide-next" ${action.complete ? '' : 'disabled'} onclick="passDone()">✅ Fatto: copri e passa il telefono</button></div>`;
+    if (!passActionStart) passActionStart = Date.now();
+    nav = `<div class="guide-nav"><button id="btnPassDone" class="btn btn-success guide-next" disabled onclick="passDone()">✋ Fai la tua mossa</button></div>`;
   } else {
     pass.stage = 'done';
     document.getElementById('guideProgressText').textContent = `Notte ${activeMatch.turn} · tutti hanno giocato`;
@@ -2723,6 +2873,12 @@ function renderPassNight() {
   body.innerHTML = html;
   bar.innerHTML = nav;
   stopEmptyCallTimer();
+  if (pass.stage === 'action') {
+    updatePassDoneButton();
+    if (!passTimer && passSecondsLeft() > 0) passTimer = setInterval(updatePassDoneButton, 250);
+  } else {
+    stopPassTimer();
+  }
   maybeNarrateParts(passNarrationKey(pass), passNarration(pass));
 }
 
@@ -2752,6 +2908,7 @@ function passStart() {
 
 function passReveal() {
   ensurePass().stage = 'action';
+  passActionStart = Date.now();
   saveMatchToStorage();
   vibrate('reveal');
   renderNarratorGuide();
@@ -2794,8 +2951,10 @@ function passDecoy(playerId) {
 function passDone() {
   const pass = ensurePass();
   const me = passPlayer(pass);
-  if (!me || !buildPassAction(me).complete) return;
+  if (!me || !buildPassAction(me).complete || passSecondsLeft() > 0) return;
   vibrate('tap');
+  passActionStart = 0;
+  stopPassTimer();
   pass.index++;
   pass.stage = pass.index < pass.order.length ? 'cover' : 'done';
   saveMatchToStorage();
@@ -3120,7 +3279,6 @@ function renderNarratorPlayersList() {
     (nightTags[p.id] || []).forEach(t => {
       badgesHtml += `<span class="status-pill status-active-badge">${escapeHtml(t)}</span>`;
     });
-    if (p.extraPin) badgesHtml += `<span class="status-pill status-active-badge">📌 Nota</span>`;
 
     const wasCopied = p.originalRoleId !== p.roleId;
 
@@ -3144,10 +3302,9 @@ function renderNarratorPlayersList() {
         </button>
       </div>
 
-      <div class="np-actions np-actions-3">
+      <div class="np-actions np-actions-2">
         <button class="np-action-btn ${p.isDead ? 'active-kill' : ''}" onclick="togglePlayerKill('${p.id}')" title="Elimina / Uccidi giocatore">${p.isDead ? '💚 Riporta in vita' : '❌ Morto'}</button>
         <button class="np-action-btn ${p.isGhost ? 'active-ghost' : ''}" onclick="togglePlayerGhost('${p.id}')" title="Attiva/Disattiva Fantasma">👻 Fantasma</button>
-        <button class="np-action-btn ${p.extraPin ? 'active-pin' : ''}" onclick="toggleNotePin('${p.id}')" title="Segnalino per ricordarti qualcosa">📌 Nota</button>
       </div>
     `;
     container.appendChild(card);
@@ -3199,14 +3356,6 @@ function resolveDeathShot(shooterId, targetId) {
       renderNarratorDashboard();
     }
   });
-}
-
-function toggleNotePin(playerId) {
-  const p = activeMatch.players.find(item => item.id === playerId);
-  if (!p) return;
-  p.extraPin = !p.extraPin;
-  saveMatchToStorage();
-  renderNarratorPlayersList();
 }
 
 function describeDeath(p) {
@@ -3325,8 +3474,15 @@ function togglePlayerGhost(playerId) {
 ========================================================================= */
 let currentAntiAmnesiaPlayerId = null;
 
+// Senza Narratore, di notte chi ha il telefono non deve poter vedere i ruoli degli altri
+function blockedForSecretNight() {
+  if (!isAutoMatch() || activeMatch.phase !== 'night' || evaluateVictoryCondition()) return false;
+  showToast('🌙 Di notte, senza Narratore, i ruoli non si possono guardare: aspettate il giorno.', 'warn');
+  return true;
+}
+
 function openAntiAmnesiaSelector() {
-  if (!activeMatch) return;
+  if (!activeMatch || blockedForSecretNight()) return;
   const container = document.getElementById('antiAmnesiaPlayerButtons');
   container.innerHTML = '';
 
@@ -3519,6 +3675,7 @@ function openInfoModal() {
   closeGameMenuModal();
   document.getElementById('infoVersion').textContent = `Versione ${getAppVersion()}`;
   renderInfoUpdateStatus();
+  renderStatsInfo();
   document.getElementById('modalInfo').classList.add('active');
 }
 
@@ -3593,6 +3750,7 @@ function getCurrentVote() {
 
 function openVoteModal() {
   if (!activeMatch || activeMatch.phase !== 'day') return;
+  currentVoterId = null;
   getCurrentVote();
   renderVoteVoters();
   renderVoteTally();
@@ -3609,54 +3767,90 @@ function getVoteCandidates(vote) {
   return alive.filter(p => vote.candidates.includes(p.id));
 }
 
+// Votazione a tocchi: chi vota (uno alla volta, in ordine) e chi viene votato
+let currentVoterId = null;
+
+// Primo votante senza voto dopo afterId (si ricomincia dall'inizio); null = hanno votato tutti
+function nextVoterId(vote, afterId) {
+  const voters = getVoters(activeMatch.players);
+  const start = Math.max(0, voters.findIndex(v => v.id === afterId) + 1);
+  for (let i = 0; i < voters.length; i++) {
+    const v = voters[(start + i) % voters.length];
+    if (!vote.votes[v.id]) return v.id;
+  }
+  return null;
+}
+
 function renderVoteVoters() {
   const vote = getCurrentVote();
   const candidates = getVoteCandidates(vote);
+  const voters = getVoters(activeMatch.players);
+  const nameOf = id => (activeMatch.players.find(p => p.id === id) || { name: '?' }).name;
   document.getElementById('voteTitle').textContent =
     `🗳️ Votazione al rogo • Giorno ${activeMatch.turn}${vote.round > 1 ? ' • Ballottaggio' : ''}`;
+  if (!voters.some(v => v.id === currentVoterId)) currentVoterId = nextVoterId(vote, null);
 
-  const container = document.getElementById('voteVotersList');
-  container.innerHTML = '';
   // Niente icone dei ruoli: la finestra può essere mostrata al tavolo senza svelare nulla.
   const colors = getMatchColors();
-  getVoters(activeMatch.players).forEach(voter => {
+  const picker = document.getElementById('votePicker');
+  const voter = voters.find(v => v.id === currentVoterId);
+  if (voter) {
     const weight = voteWeight(voter, findRoleOrNull(voter.roleId));
     const tags = [];
     if (weight === 2 && !isAutoMatch()) tags.push('<span class="badge badge-alleato">🎖️ vale 2</span>');
     if (voter.isGhost) tags.push('<span class="badge badge-solitario">👻 Fantasma</span>');
     const current = vote.votes[voter.id] || '';
-    const options = candidates.map(c =>
-      `<option value="${c.id}" ${current === c.id ? 'selected' : ''}>${escapeHtml(c.name)}${c.id === voter.id ? ' (sé stesso)' : ''}</option>`
-    ).join('');
-    const row = document.createElement('div');
-    row.className = 'vote-row';
-    row.innerHTML = `
-      <div class="vote-voter">
-        ${avatarHtml(voter.name, colors[voter.id], 'sm')}
-        <strong>${escapeHtml(voter.name)}</strong>
-        ${tags.join('')}
+    picker.innerHTML = `
+      <div class="vote-picker-head">${avatarHtml(voter.name, colors[voter.id], 'sm')} <span>Vota <strong>${escapeHtml(voter.name)}</strong>: chi manda al rogo?</span> ${tags.join('')}</div>
+      <div class="target-grid">
+        ${candidates.map(c => `
+          <button class="target-btn${current === c.id ? ' selected' : ''}" onclick="castVote('${voter.id}', '${c.id}')">
+            <span class="target-name">${avatarHtml(c.name, colors[c.id], 'sm')} ${escapeHtml(c.name)}</span>
+            ${c.id === voter.id ? '<span class="target-reason">sé stesso</span>' : ''}
+          </button>`).join('')}
       </div>
-      <select class="select-field vote-select" onchange="setVote('${voter.id}', this.value)">
-        <option value="">— non ha votato —</option>
-        ${options}
-      </select>
-    `;
-    container.appendChild(row);
-  });
+      <button class="btn btn-sm${current === VOTE_ABSTAIN ? ' btn-primary' : ''}" onclick="castVote('${voter.id}', '${VOTE_ABSTAIN}')">🤐 Si astiene</button>`;
+  } else {
+    picker.innerHTML = '<div class="guide-result result-good">✅ Hanno votato tutti. Tocca un nome qui sotto per cambiare un voto.</div>';
+  }
+
+  document.getElementById('voteVotersList').innerHTML = voters.map(v => {
+    const target = vote.votes[v.id];
+    const label = !target ? '—' : target === VOTE_ABSTAIN ? 'si astiene' : nameOf(target);
+    return `<button class="vote-voter-chip${v.id === currentVoterId ? ' current' : ''}${target ? ' voted' : ''}" onclick="selectVoter('${v.id}')">
+      ${avatarHtml(v.name, colors[v.id], 'sm')}
+      <span class="vote-voter-name">${escapeHtml(v.name)}</span>
+      <span class="vote-voter-target">→ ${escapeHtml(label)}</span>
+    </button>`;
+  }).join('');
 }
 
-function setVote(voterId, targetId) {
+function castVote(voterId, targetId) {
   vibrate('tap');
   const vote = getCurrentVote();
-  if (targetId) vote.votes[voterId] = targetId;
-  else delete vote.votes[voterId];
+  vote.votes[voterId] = targetId;
+  currentVoterId = nextVoterId(vote, voterId);
   saveMatchToStorage();
+  renderVoteVoters();
   renderVoteTally();
+}
+
+function selectVoter(voterId) {
+  vibrate('tap');
+  currentVoterId = voterId;
+  renderVoteVoters();
+}
+
+// Voti di partenza di oggi (es. il Gufo): valgono solo al primo giro, non al ballottaggio
+function currentVoteBonus(vote) {
+  if (!vote || vote.round > 1) return {};
+  const last = activeMatch.lastNightResult && activeMatch.lastNightResult.turn === activeMatch.turn ? activeMatch.lastNightResult : null;
+  return last ? markVoteBonus(last.marks, findRoleOrNull) : {};
 }
 
 function renderVoteTally() {
   const vote = getCurrentVote();
-  const tally = tallyVotes(activeMatch.players, vote.votes, findRoleOrNull, vote.candidates);
+  const tally = tallyVotes(activeMatch.players, vote.votes, findRoleOrNull, vote.candidates, currentVoteBonus(vote));
   const nameOf = id => (activeMatch.players.find(p => p.id === id) || { name: '?' }).name;
 
   document.getElementById('voteProgress').textContent = `Hanno votato ${tally.castCount} su ${tally.voterCount}`;
@@ -3669,14 +3863,16 @@ function renderVoteTally() {
         return `
           <div class="tally-row${isLeader ? ' tally-leader' : ''}">
             <div class="tally-bar" style="width: ${width}%;"></div>
-            <span class="tally-name">${isLeader ? '🔥 ' : ''}${escapeHtml(r.name)}</span>
+            <span class="tally-name">${isLeader ? '🔥 ' : ''}${escapeHtml(r.name)}${r.bonus ? ` <span class="tally-bonus">(+${r.bonus} dalla notte)</span>` : ''}</span>
             <span class="tally-votes">${r.votes} ${r.votes === 1 ? 'voto' : 'voti'}</span>
           </div>`;
       }).join('')
     : '<div class="card-subtitle">Nessun voto ancora: scegli per ogni giocatore chi vuole mandare al rogo.</div>';
 
   const actions = document.getElementById('voteActions');
-  if (tally.leaders.length === 1) {
+  if (!tally.castCount) {
+    actions.innerHTML = '';
+  } else if (tally.leaders.length === 1) {
     const leaderId = tally.leaders[0];
     actions.innerHTML = `<button class="btn btn-warning" onclick="burnFromVote('${leaderId}')">🔥 Brucia ${escapeHtml(nameOf(leaderId))} (${tally.maxVotes} ${tally.maxVotes === 1 ? 'voto' : 'voti'})</button>`;
   } else if (tally.leaders.length > 1) {
@@ -3703,11 +3899,12 @@ function renderVoteTally() {
 
 function startRunoff() {
   const vote = getCurrentVote();
-  const tally = tallyVotes(activeMatch.players, vote.votes, findRoleOrNull, vote.candidates);
+  const tally = tallyVotes(activeMatch.players, vote.votes, findRoleOrNull, vote.candidates, currentVoteBonus(vote));
   if (tally.leaders.length < 2) return;
   vote.candidates = tally.leaders.slice();
   vote.votes = {};
   vote.round += 1;
+  currentVoterId = null;
   saveMatchToStorage();
   renderVoteVoters();
   renderVoteTally();
@@ -3718,6 +3915,7 @@ function startRunoff() {
 function resetVotes() {
   const vote = getCurrentVote();
   vote.votes = {};
+  currentVoterId = null;
   saveMatchToStorage();
   renderVoteVoters();
   renderVoteTally();
@@ -3725,6 +3923,7 @@ function resetVotes() {
 
 function restartVoteFromScratch() {
   activeMatch.vote = null;
+  currentVoterId = null;
   getCurrentVote();
   saveMatchToStorage();
   renderVoteVoters();
@@ -3744,7 +3943,7 @@ function burnFromVote(playerId) {
    18. RIEPILOGO DELLA PARTITA (RUOLI SVELATI E CRONOLOGIA)
 ========================================================================= */
 function openSummaryModal() {
-  if (!activeMatch) return;
+  if (!activeMatch || blockedForSecretNight()) return;
   closeGameMenuModal();
 
   // Cronologia: notti già risolte + le scelte della notte in corso
@@ -4170,6 +4369,7 @@ function captureAppState() {
   return JSON.stringify({
     rolesDB, setupPlayers, appSettings, activeMatch,
     knownPlayers: loadKnownPlayers(),
+    stats: loadStats(),
     screen: getActiveScreenId(),
     narratorTab
   });
@@ -4191,6 +4391,7 @@ function restoreAppState(json) {
   saveSettingsToStorage();
   saveMatchToStorage();
   saveKnownPlayers(st.knownPlayers);
+  if (Array.isArray(st.stats)) saveStats(st.stats);
 
   let screen = st.screen;
   if ((screen === 'screenNarrator' || screen === 'screenDistribution') && !activeMatch) screen = 'screenSetup';
@@ -4242,7 +4443,7 @@ let pendingRestore = null;
 
 async function saveBackup() {
   const now = new Date();
-  const backup = buildBackup({ roles: rolesDB, players: setupPlayers, settings: appSettings, knownPlayers: loadKnownPlayers() }, now.toISOString(), getAppVersion());
+  const backup = buildBackup({ roles: rolesDB, players: setupPlayers, settings: appSettings, knownPlayers: loadKnownPlayers(), stats: loadStats() }, now.toISOString(), getAppVersion());
   const text = JSON.stringify(backup, null, 2);
   const name = backupFileName(now);
   const app = nativeApp();
@@ -4322,6 +4523,7 @@ function previewRestore() {
   box.innerHTML = `✅ Backup${when && !isNaN(when) ? ` del ${escapeHtml(when.toLocaleDateString('it-IT'))}` : ''}:<br>
     🎭 ${res.data.roles.length} ruoli (${custom} ${custom === 1 ? 'tuo' : 'tuoi'})<br>
     👥 ${res.data.players.length} giocatori<br>
+    ${res.data.stats.length ? `📊 ${res.data.stats.length} partite nelle statistiche<br>` : ''}
     ⚙️ le impostazioni<br>
     <span class="card-subtitle">Ripristinando, ruoli, giocatori e impostazioni di adesso vengono sostituiti. La partita in corso resta.</span>`;
   btn.disabled = false;
@@ -4336,6 +4538,7 @@ function confirmRestore() {
     setupPlayers = data.players.slice();
     appSettings = { ...appSettings, ...data.settings, knownDefaultRoleIds: data.settings.knownDefaultRoleIds || null, selectedPresetCode: null };
     saveKnownPlayers(data.knownPlayers);
+    if (data.stats.length) saveStats(data.stats);
     migrateRoles();
     pruneDeckOfMissingRoles();
     saveRolesToStorage();
@@ -4427,8 +4630,8 @@ function renderTableView() {
   let html = '';
   if (burned) {
     html = `<div class="guide-result result-danger">🔥 Oggi è stato bruciato <strong>${escapeHtml(burned.name)}</strong>.</div>`;
-  } else if (vote && Object.keys(vote.votes).length) {
-    const tally = tallyVotes(activeMatch.players, vote.votes, findRoleOrNull, vote.candidates);
+  } else if (vote && Object.values(vote.votes).some(Boolean)) {
+    const tally = tallyVotes(activeMatch.players, vote.votes, findRoleOrNull, vote.candidates, currentVoteBonus(vote));
     html = `<div class="card-subtitle">${vote.round > 1 ? '⚖️ Ballottaggio • ' : ''}Hanno votato ${tally.castCount} su ${tally.voterCount}</div>` +
       tally.totals.filter(r => r.votes > 0).map(r => {
         const width = tally.maxVotes ? Math.round((r.votes / tally.maxVotes) * 100) : 0;

@@ -1,5 +1,18 @@
 # Novità
 
+## [1.8.0] - 2026-11-07
+
+Meno cose inutili, voto più veloce, app più leggera.
+
+- Gufo: chi sceglie di notte parte con un voto contro al rogo. Nella votazione l'app lo aggiunge da sola.
+- Votazione a tocchi: l'app chiama un giocatore alla volta e tu tocchi il nome che ha detto. C'è anche "Si astiene".
+- Le note sui giocatori non ci sono più: non servivano.
+- Senza Narratore: nella lista dei giocatori trascina ☰ per metterli nell'ordine in cui siete seduti. Il telefono passa in quell'ordine.
+- Senza Narratore: ognuno tiene il telefono almeno 6 secondi, così nessuno capisce chi ha poteri. Di notte il riepilogo dei ruoli è bloccato.
+- Narratore esperto: dopo una scelta l'app va avanti da sola.
+- Statistiche: l'app conta le vostre partite e chi ha vinto. Le vedi nella tappa Mazzo e in ℹ️. Finiscono anche nel backup.
+- L'app è più leggera: i suoi file sono compressi e occupano meno spazio.
+
 ## [1.7.0] - 2026-11-07
 
 Si gioca anche senza Narratore, e prepararsi è più semplice.

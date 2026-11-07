@@ -221,12 +221,12 @@ const DEFAULT_ROLES = [
     name: 'Gufo',
     icon: '🦉',
     faction: 'Alleato dei Lupi',
-    whatYouDo: 'Ogni notte indichi un giocatore: al mattino il Narratore annuncia che il Gufo l\'ha scelto e quel giocatore sarà tra i candidati al rogo. Al Veggente risulti NON lupo e non conosci i lupi.',
+    whatYouDo: 'Ogni notte indichi un giocatore: al mattino si annuncia che il Gufo l\'ha scelto e al rogo quel giocatore parte con un voto contro. Al Veggente risulti NON lupo e non conosci i lupi.',
     howYouWin: 'Vinci se vincono i lupi.',
     wakeTiming: 'ogni_notte',
     priority: 6,
     narratorPhrase: '«Si sveglia il Gufo e indica un giocatore... Il Gufo chiude gli occhi.»',
-    narratorNote: 'Al mattino la guida ti fa annunciare la scelta del Gufo.',
+    narratorNote: 'Al mattino la guida ti fa annunciare la scelta del Gufo; nella votazione l\'app gli aggiunge da sola un voto contro.',
     isPair: false
   },
   {
@@ -465,28 +465,46 @@ function voteWeight(player, role) {
   return roleTraits(role).doubleVote ? 2 : 1;
 }
 
+// Voto "mi astengo": conta come votato, ma non va a nessuno
+const VOTE_ABSTAIN = '-';
+
+/** Voti di partenza dati dai segni della notte (es. il Gufo): { idGiocatore: voti }. */
+function markVoteBonus(marks, findRole) {
+  const bonus = {};
+  (marks || []).forEach(m => {
+    if (roleMarkEffect(findRole(m.roleId)) === 'voteAgainst') bonus[m.playerId] = (bonus[m.playerId] || 0) + 1;
+  });
+  return bonus;
+}
+
 /**
  * Conteggio dei voti.
- * votes = { idVotante: idVotato } ('' o assente = non ha ancora votato / astenuto).
+ * votes = { idVotante: idVotato } ('' o assente = non ha ancora votato, VOTE_ABSTAIN = si astiene).
  * candidateIds = elenco dei votabili (null = tutti i vivi).
- * Restituisce { totals: [{playerId, name, votes}] in ordine decrescente, leaders: [id], maxVotes, castCount, voterCount }.
+ * bonusVotes = voti di partenza (vedi markVoteBonus), solo per chi è votabile.
+ * Restituisce { totals: [{playerId, name, votes, bonus}] in ordine decrescente, leaders: [id], maxVotes, castCount, voterCount }.
  */
-function tallyVotes(players, votes, findRole, candidateIds) {
+function tallyVotes(players, votes, findRole, candidateIds, bonusVotes) {
   const list = players || [];
   const allowed = new Set((candidateIds && candidateIds.length ? candidateIds : list.filter(p => !p.isDead).map(p => p.id)));
+  const bonus = bonusVotes || {};
   const totals = {};
-  list.forEach(p => { if (allowed.has(p.id)) totals[p.id] = 0; });
+  list.forEach(p => { if (allowed.has(p.id)) totals[p.id] = Number(bonus[p.id]) || 0; });
   const voters = getVoters(list);
   let castCount = 0;
   voters.forEach(voter => {
     const target = (votes || {})[voter.id];
+    if (target === VOTE_ABSTAIN) {
+      castCount++;
+      return;
+    }
     if (!target || !(target in totals)) return;
     totals[target] += voteWeight(voter, findRole(voter.roleId));
     castCount++;
   });
   const rows = list
     .filter(p => p.id in totals)
-    .map(p => ({ playerId: p.id, name: p.name, votes: totals[p.id] }))
+    .map(p => ({ playerId: p.id, name: p.name, votes: totals[p.id], bonus: Number(bonus[p.id]) || 0 }))
     .sort((a, b) => b.votes - a.votes);
   const maxVotes = rows.length ? rows[0].votes : 0;
   const leaders = maxVotes > 0 ? rows.filter(r => r.votes === maxVotes).map(r => r.playerId) : [];
@@ -622,7 +640,8 @@ function sanitizeImportedRole(obj) {
     deathAction: DEATH_ACTION_KEYS.includes(obj.deathAction) ? obj.deathAction : 'none',
     victory: VICTORY_KEYS.includes(obj.victory) ? obj.victory : 'faction',
     traits: cleanFlags(obj.traits, TRAIT_KEYS),
-    markText: cleanText(obj.markText, 200)
+    markText: cleanText(obj.markText, 200),
+    markEffect: MARK_EFFECT_KEYS.includes(obj.markEffect) ? obj.markEffect : 'none'
   };
 }
 
@@ -631,7 +650,8 @@ function encodeRolesShare(roles) {
     id: r.id, name: r.name, icon: r.icon, faction: r.faction, whatYouDo: r.whatYouDo, howYouWin: r.howYouWin,
     wakeTiming: r.wakeTiming, priority: r.priority, narratorPhrase: r.narratorPhrase || '', narratorNote: r.narratorNote || '', isPair: !!r.isPair,
     nightAction: roleNightAction(r), actionRules: roleActionRules(r), wakesWithWolves: roleWakesWithWolves(r),
-    deathAction: roleDeathAction(r), victory: roleVictory(r), traits: roleTraits(r), markText: roleNightAction(r) === 'mark' ? roleMarkText(r) : ''
+    deathAction: roleDeathAction(r), victory: roleVictory(r), traits: roleTraits(r), markText: roleNightAction(r) === 'mark' ? roleMarkText(r) : '',
+    markEffect: roleMarkEffect(r)
   }));
   return ROLES_SHARE_PREFIX + utf8ToBase64(JSON.stringify(payload));
 }
@@ -658,7 +678,7 @@ function decodeRolesShare(text) {
 
 /** Capacità del ruolo in forma confrontabile (per capire se è stato modificato). */
 function roleCapabilities(role) {
-  const mark = roleNightAction(role) === 'mark' ? roleMarkText(role) : '';
+  const mark = roleNightAction(role) === 'mark' ? [roleMarkText(role), roleMarkEffect(role)] : '';
   return JSON.stringify([roleNightAction(role), roleActionRules(role), roleWakesWithWolves(role), roleDeathAction(role), roleVictory(role), roleTraits(role), mark]);
 }
 
@@ -745,6 +765,13 @@ const TRAIT_LABELS = {
 };
 const TRAIT_KEYS = Object.keys(TRAIT_LABELS);
 
+// Effetto del segno lasciato di notte (azione 'mark')
+const MARK_EFFECTS = {
+  none: { label: 'Solo un annuncio al mattino', short: '' },
+  voteAgainst: { label: 'Il giocatore scelto parte con 1 voto contro al rogo', short: 'chi sceglie parte con 1 voto contro al rogo' }
+};
+const MARK_EFFECT_KEYS = Object.keys(MARK_EFFECTS);
+
 const ACTION_RULE_LABELS = {
   notSelf: 'Non può scegliere sé stesso',
   notSameTwice: 'Non può scegliere la stessa persona due notti di fila',
@@ -772,7 +799,7 @@ const DEFAULT_ROLE_RULES = {
   strega: { nightAction: 'witch', balance: 4 },
   cacciatore: { deathAction: 'kill', balance: 3 },
   massoni: { balance: 2 },
-  gufo: { nightAction: 'mark', actionRules: { notSelf: true }, balance: -3, markText: '«Stanotte il Gufo ha scelto {nome}: oggi sarà tra i candidati al rogo.»' },
+  gufo: { nightAction: 'mark', actionRules: { notSelf: true }, balance: -3, markText: '«Stanotte il Gufo ha scelto {nome}: oggi parte con un voto contro al rogo.»', markEffect: 'voteAgainst' },
   lupo_bianco: { nightAction: 'kill', actionRules: { notSelf: true, onlyWolves: true }, wakesWithWolves: true, victory: 'lastAlive', balance: -4 }
 };
 
@@ -828,6 +855,12 @@ function roleTraits(role) {
   return cleanFlags(roleDefaults(role).traits, TRAIT_KEYS);
 }
 
+function roleMarkEffect(role) {
+  if (!role) return 'none';
+  if (MARK_EFFECT_KEYS.includes(role.markEffect)) return role.markEffect;
+  return roleDefaults(role).markEffect || 'none';
+}
+
 function roleMarkText(role) {
   if (role && typeof role.markText === 'string' && role.markText.trim()) return role.markText.trim();
   return roleDefaults(role).markText || '«{nome} ha trovato un segno: {ruolo} è passato di lì stanotte.»';
@@ -844,6 +877,7 @@ function roleBalance(role) {
   if (typeof def.balance === 'number' && base && base.faction === role.faction && roleNightAction(role) === roleNightAction(base)) return def.balance;
   const factionWeight = { 'Villaggio': 1, 'Branco': -6, 'Alleato dei Lupi': -4, 'Solitario': -2 }[role.faction];
   let power = { investigate: 5, protect: 2, witch: 3, medium: 2, kill: 2, mark: 0, copy: -1, note: 0, none: 0, wolves: 0 }[roleNightAction(role)] || 0;
+  if (roleNightAction(role) === 'mark' && roleMarkEffect(role) === 'voteAgainst') power = 1;
   if (roleActionRules(role).oncePerGame) power = Math.round(power / 2);
   if (role.faction !== 'Villaggio') power = -Math.abs(power);
   let total = (factionWeight === undefined ? 0 : factionWeight) + power;
@@ -861,7 +895,37 @@ DEFAULT_ROLES.forEach(r => {
   r.victory = roleVictory(r);
   r.traits = roleTraits(r);
   r.markText = roleDefaults(r).markText || '';
+  r.markEffect = roleMarkEffect(r);
 });
+
+// Testi dei ruoli base cambiati in una versione nuova (vecchi testi → si usa quello di adesso).
+// Si aggiornano solo se chi ha l'app ha ancora il testo vecchio: quello che ha scritto l'utente non si tocca.
+const OUTDATED_ROLE_TEXTS = {
+  gufo: {
+    whatYouDo: ['Ogni notte indichi un giocatore: al mattino il Narratore annuncia che il Gufo l\'ha scelto e quel giocatore sarà tra i candidati al rogo. Al Veggente risulti NON lupo e non conosci i lupi.'],
+    narratorNote: ['Al mattino la guida ti fa annunciare la scelta del Gufo.'],
+    markText: ['«Stanotte il Gufo ha scelto {nome}: oggi sarà tra i candidati al rogo.»']
+  }
+};
+
+/** Aggiorna i testi vecchi dei ruoli base mai modificati. Restituisce { roles, changed }. */
+function refreshOutdatedRoleTexts(roles) {
+  let changed = false;
+  const list = (roles || []).map(r => {
+    const outdated = OUTDATED_ROLE_TEXTS[r.id];
+    const base = DEFAULT_ROLES.find(d => d.id === r.id);
+    if (!outdated || !base) return r;
+    const next = { ...r };
+    Object.entries(outdated).forEach(([field, oldTexts]) => {
+      if (oldTexts.includes(next[field]) && next[field] !== base[field]) {
+        next[field] = base[field];
+        changed = true;
+      }
+    });
+    return next;
+  });
+  return { roles: list, changed };
+}
 
 /** A chi aveva già l'app aggiunge i ruoli base nuovi (una volta sola). */
 function addNewDefaultRoles(roles, knownIds) {
@@ -1140,6 +1204,7 @@ function roleAbilityNotes(role) {
   if (roleWakesWithWolves(role) && roleNightAction(role) !== 'wolves') notes.push('si sveglia anche con i Lupi');
   if (rules.onlyWolves && NIGHT_ACTIONS[roleNightAction(role)].target) notes.push('può scegliere solo un lupo');
   if (rules.oncePerGame && roleNightAction(role) !== 'witch' && NIGHT_ACTIONS[roleNightAction(role)].target) notes.push('usa il potere una sola volta per partita');
+  if (roleNightAction(role) === 'mark' && roleMarkEffect(role) !== 'none') notes.push(MARK_EFFECTS[roleMarkEffect(role)].short);
   if (roleDeathAction(role) !== 'none') notes.push(DEATH_ACTIONS[roleDeathAction(role)].short);
   if (roleVictory(role) !== 'faction') notes.push(VICTORY_TYPES[roleVictory(role)].short);
   const traits = roleTraits(role);
@@ -1372,6 +1437,72 @@ function passOrder(players) {
   return (players || []).filter(p => !p.isDead).map(p => p.id);
 }
 
+/* ---------- Statistiche delle partite ---------- */
+const STATS_LIMIT = 300;
+const WINNER_TYPES = ['village', 'wolves', 'solo'];
+
+/** Chiave che identifica un mazzo (stessi ruoli e quantità = stessa chiave). */
+function deckKey(deckMap) {
+  return Object.entries(deckMap || {})
+    .filter(([, qty]) => Number(qty) > 0)
+    .map(([id, qty]) => `${id}:${Number(qty)}`)
+    .sort()
+    .join(',');
+}
+
+/** Riga delle statistiche per una partita finita (win = risultato di evaluateVictory). */
+function buildMatchRecord(match, win, nowMs) {
+  const solo = win.type === 'solo' && win.playerId ? (match.players || []).find(p => p.id === win.playerId) : null;
+  return {
+    id: String(match.id || ''),
+    date: nowMs,
+    deckKey: deckKey(match.initialDeckMap),
+    players: (match.players || []).length,
+    mode: match.mode === 'auto' ? 'auto' : 'narrator',
+    winner: win.type,
+    soloRoleId: solo ? solo.roleId : '',
+    turns: Number(match.turn) || 1
+  };
+}
+
+/** Aggiunge (o aggiorna, se la partita c'è già) una partita alle statistiche: le più recenti prima. */
+function upsertMatchRecord(records, record, limit) {
+  const list = (records || []).filter(r => r && r.id !== record.id);
+  list.unshift(record);
+  return list.slice(0, limit || STATS_LIMIT);
+}
+
+function removeMatchRecord(records, id) {
+  return (records || []).filter(r => r && r.id !== id);
+}
+
+/** Riassunto: quante partite e chi ha vinto. key = solo le partite con quel mazzo (null = tutte). */
+function summarizeRecords(records, key) {
+  const out = { played: 0, village: 0, wolves: 0, solo: 0 };
+  (records || []).forEach(r => {
+    if (!r || (key && r.deckKey !== key) || !WINNER_TYPES.includes(r.winner)) return;
+    out.played++;
+    out[r.winner]++;
+  });
+  return out;
+}
+
+function sanitizeMatchRecords(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter(r => r && typeof r.id === 'string' && r.id && WINNER_TYPES.includes(r.winner))
+    .map(r => ({
+      id: r.id.slice(0, 40),
+      date: Number(r.date) || 0,
+      deckKey: cleanText(r.deckKey, 600),
+      players: Math.max(0, parseInt(r.players, 10) || 0),
+      mode: r.mode === 'auto' ? 'auto' : 'narrator',
+      winner: r.winner,
+      soloRoleId: cleanText(r.soloRoleId, 40),
+      turns: Math.max(1, parseInt(r.turns, 10) || 1)
+    }))
+    .slice(0, STATS_LIMIT);
+}
+
 /* ---------- Backup ---------- */
 const BACKUP_FORMAT = 'lupus-backup';
 const BACKUP_VERSION = 1;
@@ -1395,7 +1526,8 @@ function buildBackup(state, nowIso, appVersion) {
       roles: state.roles || [],
       players: state.players || [],
       settings: state.settings || {},
-      knownPlayers: state.knownPlayers || []
+      knownPlayers: state.knownPlayers || [],
+      stats: state.stats || []
     }
   };
 }
@@ -1455,7 +1587,7 @@ function parseBackup(text) {
     .slice(0, 60);
   return {
     createdAt: typeof obj.createdAt === 'string' ? obj.createdAt : '',
-    data: { roles, players, settings: sanitizeBackupSettings(obj.data.settings), knownPlayers }
+    data: { roles, players, settings: sanitizeBackupSettings(obj.data.settings), knownPlayers, stats: sanitizeMatchRecords(obj.data.stats) }
   };
 }
 

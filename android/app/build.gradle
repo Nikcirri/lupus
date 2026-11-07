@@ -11,6 +11,9 @@ android {
         versionCode = Integer.parseInt(System.getenv("APP_VERSION_CODE") ?: "1")
         versionName = System.getenv("APP_VERSION_NAME") ?: "0.0.0-dev"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // Testi delle librerie Android solo in italiano (più l'inglese di base): l'app è tutta in italiano
+        // e così non porta dentro le traduzioni in decine di lingue.
+        resourceConfigurations += ['it']
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61

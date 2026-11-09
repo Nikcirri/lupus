@@ -1,5 +1,15 @@
 # Novità
 
+## [1.10.0] - 2026-11-10
+
+Aggiornamenti dentro l'app.
+
+- Quando esce una versione nuova, in alto compare un avviso con le novità: tocca "Aggiorna" e l'app la scarica e apre l'installazione di Android.
+- La prima volta Android chiede il permesso "Installa app sconosciute": l'app ti dice cosa toccare e poi riprende da sola.
+- In ℹ️ → Aggiornamenti trovi la versione installata, "Controlla aggiornamenti", "Aggiorna dall'app" e "Scarica da GitHub".
+- Dopo un aggiornamento compare il messaggio "App aggiornata alla versione...".
+- Il file scaricato resta nella cache dell'app: per liberare spazio basta "Svuota cache".
+
 ## [1.9.1] - 2026-11-07
 
 - Il file da installare è ancora più leggero: circa 1,1 MB.

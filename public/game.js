@@ -88,8 +88,22 @@ window.addEventListener('DOMContentLoaded', () => {
   renderUpdateBanner();
   checkWhatsNew(isFirstRun);
   if (isFirstRun) openWelcome();
-  setTimeout(autoCheckForUpdates, 1500);
+  setTimeout(() => {
+    resumeUpdateAfterPermission();
+    autoCheckForUpdates();
+  }, 1500);
 });
+
+// Ritorno nell'app (chiamato da src/native.js): riprende l'aggiornamento e ricontrolla GitHub
+window.handleAppResume = function handleAppResume() {
+  if (updatePhase === 'install') {
+    // Si torna dall'installazione senza aver aggiornato (es. "Annulla"): si può riprovare
+    updatePhase = 'idle';
+    renderUpdateUi();
+  }
+  resumeUpdateAfterPermission();
+  autoCheckForUpdates();
+};
 
 function hasSavedData() {
   try {
@@ -105,6 +119,7 @@ window.handleAndroidBack = function handleAndroidBack() {
   const isOpen = id => document.getElementById(id).classList.contains('active');
 
   if (isOpen('modalConfirm')) { closeConfirmModal(); return true; }
+  if (isOpen('modalUpdatePermission')) { closeUpdatePermissionModal(); return true; }
   if (isOpen('modalWelcome')) { closeWelcome(); return true; }
   if (isTableViewOpen()) { showToast('✋ Per tornare al Narratore tieni premuto il pulsante in basso.'); return true; }
   if (isOpen('modalRestore')) { closeRestoreModal(); return true; }
@@ -458,6 +473,7 @@ function showScreen(screenId) {
   document.getElementById('headerIcon').style.display = isNarrator ? 'none' : 'inline';
   document.getElementById('btnInfoTop').style.display = (screenId === 'screenSetup') ? 'inline-flex' : 'none';
   if (screenId !== 'screenNarrator') document.getElementById('headerTitle').textContent = 'Lupus';
+  renderUpdateBanner();
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -3032,27 +3048,45 @@ function returnToSetupScreen() {
 
 /* =========================================================================
    16. INFORMAZIONI E AGGIORNAMENTI DELL'APP
-   L'unico collegamento a internet dell'app: chiede a GitHub qual è l'ultima versione.
+   L'unico collegamento a internet dell'app: chiede a GitHub l'ultima Release
+   (all'apertura e al ritorno nell'app, al massimo ogni 10 minuti). Nell'app Android
+   "Aggiorna" scarica l'APK nella cache e apre l'installazione (plugin AppUpdater).
 ========================================================================= */
+let updatePhase = 'idle';          // 'idle' | 'checking' | 'download' | 'install' | 'permission'
+let updatePercent = 0;
+let updateBannerHidden = false;    // "Dopo": l'avviso resta chiuso fino alla prossima apertura dell'app
+let updateCheckRunning = null;     // controllo in corso (per non farne due insieme)
+
 function loadUpdateState() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.UPDATES) || 'null');
-    if (saved && typeof saved === 'object') return saved;
-  } catch (e) {}
-  return { lastCheck: null, latestVersion: null, apkUrl: null, pageUrl: null, dismissedVersion: null };
+    return sanitizeUpdateState(JSON.parse(localStorage.getItem(STORAGE_KEYS.UPDATES) || 'null'));
+  } catch (e) {
+    return sanitizeUpdateState(null);
+  }
 }
 
 function saveUpdateState(state) {
-  try { localStorage.setItem(STORAGE_KEYS.UPDATES, JSON.stringify(state)); } catch (e) {}
+  try { localStorage.setItem(STORAGE_KEYS.UPDATES, JSON.stringify(sanitizeUpdateState(state))); } catch (e) {}
 }
 
 function getAvailableUpdate() {
-  const state = loadUpdateState();
-  if (state.latestVersion && isNewerVersion(state.latestVersion, getAppVersion())) return state;
-  return null;
+  return pendingUpdate(loadUpdateState(), getAppVersion());
 }
 
-async function checkForUpdates() {
+function canSelfUpdate() {
+  const app = nativeApp();
+  return !!(app && app.canSelfUpdate);
+}
+
+/** Chiede a GitHub l'ultima Release. Risultato: available | current | offline | error. */
+function checkForUpdates() {
+  if (!updateCheckRunning) {
+    updateCheckRunning = fetchLatestRelease().finally(() => { updateCheckRunning = null; });
+  }
+  return updateCheckRunning;
+}
+
+async function fetchLatestRelease() {
   if (navigator.onLine === false) return { kind: 'offline' };
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = setTimeout(() => ctrl && ctrl.abort(), 10000);
@@ -3066,12 +3100,17 @@ async function checkForUpdates() {
     const release = parseRelease(await res.json());
     if (!release) return { kind: 'error' };
     const state = loadUpdateState();
+    const known = pendingUpdate(state, getAppVersion());
     state.lastCheck = new Date().toISOString();
     state.latestVersion = release.version;
     state.apkUrl = release.apkUrl;
     state.pageUrl = release.pageUrl;
+    state.notes = release.notes;
     saveUpdateState(state);
-    return isNewerVersion(release.version, getAppVersion()) ? { kind: 'available', release } : { kind: 'current', release };
+    if (!isNewerVersion(release.version, getAppVersion())) return { kind: 'current', release };
+    // Una versione ancora più nuova di quella rimandata con "Dopo": l'avviso torna
+    if (!known || known.latestVersion !== release.version) updateBannerHidden = false;
+    return { kind: 'available', release };
   } catch (e) {
     return { kind: navigator.onLine === false ? 'offline' : 'error' };
   } finally {
@@ -3079,39 +3118,165 @@ async function checkForUpdates() {
   }
 }
 
-// All'avvio, al massimo una volta al giorno, solo nell'app installata e solo con internet.
+// All'apertura e al ritorno nell'app (solo nell'app installata): al massimo ogni 10 minuti
 async function autoCheckForUpdates() {
-  if (!isNativeApp()) return;
-  const state = loadUpdateState();
-  if (!shouldAutoCheck(state.lastCheck, new Date())) return;
-  const result = await checkForUpdates();
-  if (result.kind === 'available') renderUpdateBanner();
+  renderUpdateUi();
+  if (!isNativeApp() || updatePhase === 'download' || updatePhase === 'permission') return;
+  if (!shouldAutoCheck(loadUpdateState().lastCheck, new Date())) return;
+  await checkForUpdates();
+  renderUpdateUi();
 }
 
+function renderUpdateUi() {
+  renderUpdateBanner();
+  if (document.getElementById('modalInfo').classList.contains('active')) renderInfoUpdateSection();
+}
+
+// Avviso in alto: nuova versione (con le prime novità), download, installazione o permesso
 function renderUpdateBanner() {
   const banner = document.getElementById('updateBanner');
   const update = getAvailableUpdate();
-  if (!update || update.dismissedVersion === update.latestVersion) {
+  const distributing = document.getElementById('screenDistribution').classList.contains('active');
+  const busy = updatePhase === 'download' || updatePhase === 'install' || updatePhase === 'permission';
+  if (!update || distributing || (updateBannerHidden && !busy)) {
     banner.style.display = 'none';
     return;
   }
-  document.getElementById('updateBannerText').textContent =
-    `È uscita la versione ${update.latestVersion} (tu hai la ${getAppVersion()}). Scaricala e installala sopra: partite e ruoli restano.`;
+  const version = escapeHtml(update.latestVersion);
+  let html;
+  if (updatePhase === 'download') {
+    html = `
+      <div id="updateBannerTitle" class="card-title">${downloadTitle(update)}</div>
+      <div class="update-progress"><div id="updateBannerBar" style="width: ${updatePercent}%;"></div></div>
+      <div class="card-subtitle">Puoi continuare a usare l'app intanto.</div>`;
+  } else if (updatePhase === 'install') {
+    html = `
+      <div class="card-title">📲 Quasi fatto</div>
+      <div class="card-subtitle">Nella finestra di Android tocca <strong>Aggiorna</strong> (o <strong>Installa</strong>), poi <strong>Apri</strong>. Partite e ruoli restano.</div>
+      <div class="update-actions"><button class="btn" onclick="installUpdate()">🔁 Riprova</button></div>`;
+  } else if (updatePhase === 'permission') {
+    html = `
+      <div class="card-title">🔐 Dai il permesso e torna qui</div>
+      <div class="card-subtitle">Attiva <strong>Consenti da questa origine</strong>, poi torna indietro: l'aggiornamento riparte da solo.</div>`;
+  } else {
+    const notes = (update.notes || []).slice(0, UPDATE_BANNER_NOTES);
+    html = `
+      <div class="card-title">🆕 Nuova versione ${version}</div>
+      <div class="card-subtitle">Hai la ${escapeHtml(getAppVersion())}. Si installa sopra: partite e ruoli restano.</div>
+      ${notes.length ? `<ul class="update-notes">${notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>` : ''}
+      <div class="update-actions">
+        <button class="btn" onclick="dismissUpdateBanner()">Dopo</button>
+        <button class="btn btn-primary" onclick="installUpdate()">⬇️ Aggiorna</button>
+      </div>`;
+  }
+  banner.innerHTML = html;
   banner.style.display = 'flex';
 }
 
-function dismissUpdateBanner() {
-  const state = loadUpdateState();
-  state.dismissedVersion = state.latestVersion;
-  saveUpdateState(state);
-  renderUpdateBanner();
+function downloadTitle(update) {
+  return `⬇️ Scarico la versione ${update.latestVersion}… ${updatePercent}%`;
 }
 
-function downloadUpdate() {
+// Solo la percentuale, senza ridisegnare tutto a ogni passo del download
+function renderUpdateProgress() {
   const update = getAvailableUpdate();
-  const url = (update && (update.apkUrl || update.pageUrl)) || UPDATE_PAGE_URL;
-  openExternalLink(url);
-  showToast('⬇️ Download avviato: quando finisce apri il file e tocca "Aggiorna".');
+  if (!update || updatePhase !== 'download') return;
+  const title = document.getElementById('updateBannerTitle');
+  const bar = document.getElementById('updateBannerBar');
+  if (title) title.textContent = downloadTitle(update);
+  if (bar) bar.style.width = `${updatePercent}%`;
+  document.querySelector('#infoUpdateProgress div').style.width = `${updatePercent}%`;
+  document.getElementById('infoUpdateStatus').textContent = downloadTitle(update);
+}
+
+function dismissUpdateBanner() {
+  updateBannerHidden = true;
+  renderUpdateBanner();
+  const inGame = document.getElementById('screenNarrator').classList.contains('active');
+  showToast(inGame
+    ? '👍 Lo ritrovi quando vuoi: ⚙️ in alto → Informazioni e aggiornamenti.'
+    : '👍 Lo ritrovi quando vuoi: tocca ℹ️ in alto, poi Aggiornamenti.');
+}
+
+/**
+ * Scarica e installa la nuova versione dentro l'app. Se Android non lo permette ancora,
+ * spiega cosa toccare e apre le impostazioni; fuori dall'app Android apre GitHub.
+ */
+async function installUpdate() {
+  if (updatePhase === 'download' || updatePhase === 'checking') return;
+  const update = getAvailableUpdate();
+  if (!update) return;
+  if (!canSelfUpdate() || !update.apkUrl) {
+    openReleasesPage();
+    return;
+  }
+  const app = nativeApp();
+  try {
+    if (!(await app.installAllowed())) {
+      document.getElementById('modalUpdatePermission').classList.add('active');
+      return;
+    }
+    updatePhase = 'download';
+    updatePercent = 0;
+    renderUpdateUi();
+    await app.downloadAndInstall(update.apkUrl, percent => {
+      updatePercent = Math.max(0, Math.min(100, Math.round(percent)));
+      renderUpdateProgress();
+    });
+    updatePhase = 'install';
+    renderUpdateUi();
+  } catch (e) {
+    updatePhase = 'idle';
+    renderUpdateUi();
+    showToast('⚠️ Non riesco a scaricare l\'aggiornamento. Controlla internet e riprova (o usa "Scarica da GitHub").', 'warn');
+  }
+}
+
+function closeUpdatePermissionModal() {
+  document.getElementById('modalUpdatePermission').classList.remove('active');
+}
+
+async function openUpdatePermissionSettings() {
+  closeUpdatePermissionModal();
+  const state = loadUpdateState();
+  state.permissionAskedAt = new Date().toISOString();
+  saveUpdateState(state);
+  updatePhase = 'permission';
+  renderUpdateUi();
+  try {
+    await nativeApp().openInstallSettings();
+  } catch (e) {
+    updatePhase = 'idle';
+    state.permissionAskedAt = null;
+    saveUpdateState(state);
+    renderUpdateUi();
+    showToast('⚠️ Non riesco ad aprire le impostazioni. Usa "Scarica da GitHub".', 'warn');
+  }
+}
+
+// Si torna dalle impostazioni del permesso: se è stato dato, l'aggiornamento riparte da solo
+async function resumeUpdateAfterPermission() {
+  const state = loadUpdateState();
+  if (!state.permissionAskedAt) return;
+  const resume = shouldResumeAfterPermission(state.permissionAskedAt, new Date());
+  state.permissionAskedAt = null;
+  saveUpdateState(state);
+  if (updatePhase === 'permission') updatePhase = 'idle';
+  renderUpdateUi();
+  if (!resume || !canSelfUpdate() || !getAvailableUpdate()) return;
+  try {
+    if (await nativeApp().installAllowed()) {
+      installUpdate();
+    } else {
+      showToast('🔐 Permesso non dato: puoi riprovare quando vuoi con "Aggiorna".');
+    }
+  } catch (e) {
+    showToast('⚠️ Non riesco a controllare il permesso. Riprova con "Aggiorna".', 'warn');
+  }
+}
+
+function openReleasesPage() {
+  openExternalLink(UPDATE_PAGE_URL);
 }
 
 function openExternalLink(url) {
@@ -3125,8 +3290,7 @@ function openExternalLink(url) {
 
 function openInfoModal() {
   closeGameMenuModal();
-  document.getElementById('infoVersion').textContent = `Versione ${getAppVersion()}`;
-  renderInfoUpdateStatus();
+  renderInfoUpdateSection();
   renderStatsInfo();
   document.getElementById('modalInfo').classList.add('active');
 }
@@ -3135,43 +3299,75 @@ function closeInfoModal() {
   document.getElementById('modalInfo').classList.remove('active');
 }
 
-function renderInfoUpdateStatus(message) {
+// Sezione "Aggiornamenti" delle informazioni: versione, stato, controllo e i due modi di aggiornare
+function renderInfoUpdateSection(message) {
+  document.getElementById('infoVersion').textContent = `Versione installata: ${getAppVersion()}`;
   const statusEl = document.getElementById('infoUpdateStatus');
-  const downloadBtn = document.getElementById('btnInfoDownload');
+  const progress = document.getElementById('infoUpdateProgress');
+  const checkBtn = document.getElementById('btnInfoCheck');
+  const selfBtn = document.getElementById('btnInfoSelfUpdate');
   const update = getAvailableUpdate();
-  if (message) {
+  const busy = updatePhase === 'checking' || updatePhase === 'download';
+  checkBtn.disabled = busy;
+  selfBtn.disabled = busy;
+  checkBtn.textContent = updatePhase === 'checking' ? '⏳ Controllo in corso...' : '🔄 Controlla aggiornamenti';
+  progress.style.display = updatePhase === 'download' ? 'block' : 'none';
+  progress.firstElementChild.style.width = `${updatePercent}%`;
+  if (updatePhase === 'download' && update) {
+    statusEl.textContent = downloadTitle(update);
+  } else if (updatePhase === 'install') {
+    statusEl.textContent = '📲 Si è aperta l\'installazione di Android: tocca Aggiorna (o Installa), poi Apri.';
+  } else if (updatePhase === 'permission') {
+    statusEl.textContent = '🔐 Attiva "Consenti da questa origine" e torna qui: l\'aggiornamento riparte da solo.';
+  } else if (message) {
     statusEl.textContent = message;
   } else if (update) {
     statusEl.textContent = `🆕 È disponibile la versione ${update.latestVersion}.`;
   } else {
     const state = loadUpdateState();
     statusEl.textContent = state.lastCheck
-      ? `Ultimo controllo: ${new Date(state.lastCheck).toLocaleString('it-IT', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}.`
+      ? `✅ Ultimo controllo: ${new Date(state.lastCheck).toLocaleString('it-IT', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}.`
       : 'Non hai ancora controllato gli aggiornamenti.';
   }
-  downloadBtn.style.display = update ? 'inline-flex' : 'none';
+}
+
+const UPDATE_CHECK_MESSAGES = {
+  current: '✅ Hai già l\'ultima versione.',
+  offline: '📵 Sei offline: collegati a internet e riprova.',
+  error: '⚠️ Non sono riuscito a controllare. Riprova tra poco.'
+};
+
+// "Controlla aggiornamenti" (a mano): chiede subito a GitHub
+async function runManualCheck() {
+  updatePhase = 'checking';
+  renderInfoUpdateSection();
+  const result = await checkForUpdates();
+  updatePhase = 'idle';
+  if (result.kind === 'available') updateBannerHidden = false;
+  const message = result.kind === 'available' ? `🆕 È disponibile la versione ${result.release.version}!` : UPDATE_CHECK_MESSAGES[result.kind];
+  renderInfoUpdateSection(message);
+  renderUpdateBanner();
+  return result;
 }
 
 async function manualCheckForUpdates() {
-  const btn = document.getElementById('btnInfoCheck');
-  btn.disabled = true;
-  btn.textContent = '⏳ Controllo in corso...';
-  const result = await checkForUpdates();
-  btn.disabled = false;
-  btn.textContent = '🔄 Controlla aggiornamenti';
-  const messages = {
-    available: `🆕 È disponibile la versione ${result.release ? result.release.version : ''}!`,
-    current: '✅ Hai già l\'ultima versione.',
-    offline: '📵 Sei offline: collegati a internet e riprova.',
-    error: '⚠️ Non sono riuscito a controllare. Riprova tra poco.'
-  };
-  if (result.kind === 'available') {
-    const state = loadUpdateState();
-    state.dismissedVersion = null;
-    saveUpdateState(state);
+  if (updatePhase === 'download' || updatePhase === 'checking') return;
+  await runManualCheck();
+}
+
+// "Aggiorna dall'app": se non si conosce ancora una versione nuova, prima chiede a GitHub
+async function selfUpdateFromInfo() {
+  if (updatePhase === 'download' || updatePhase === 'checking') return;
+  if (!canSelfUpdate()) {
+    showToast('📲 Funziona solo nell\'app Android: apro la pagina di GitHub.');
+    openReleasesPage();
+    return;
   }
-  renderInfoUpdateStatus(messages[result.kind]);
-  renderUpdateBanner();
+  if (!getAvailableUpdate()) {
+    const result = await runManualCheck();
+    if (result.kind !== 'available') return;
+  }
+  await installUpdate();
 }
 
 /* =========================================================================
@@ -4113,6 +4309,7 @@ function checkWhatsNew(isFirstRun) {
     localStorage.setItem(STORAGE_KEYS.SEEN_VERSION, current);
   } catch (e) {}
   if (seen === current || isFirstRun) return;
+  if (justUpdated(seen, current)) showToast(`✅ App aggiornata alla versione ${current}`);
   openWhatsNewModal(seen);
 }
 

@@ -187,6 +187,53 @@ async function main() {
   await sleep(500);
   check(appInFront(), 'chiusa Condividi si torna all\'app', focusedWindow().trim());
 
+  console.log('Aggiornamento dentro l\'app (plugin AppUpdater)');
+  const allowed = await dt.attempt('return (await Capacitor.Plugins.AppUpdater.canInstall()).allowed;');
+  check(allowed === false, 'all\'inizio Android chiede il permesso per installare', String(allowed));
+  for (const bad of ['https://example.com/Lupus.apk', 'https://github.com/Nikcirri/nutrizione/releases/download/v1.0.0/x.apk', 'http://github.com/Nikcirri/lupus/releases/download/v1.9.1/Lupus-v1.9.1.apk', 'https://github.com/Nikcirri/lupus/releases/download/v1.9.1/Lupus.zip']) {
+    const r = await dt.attempt(`await Capacitor.Plugins.AppUpdater.downloadAndInstall({ url: ${JSON.stringify(bad)} }); return 'scaricato';`);
+    check(/non valido/.test(String(r)), `rifiuta ${bad}`, String(r));
+  }
+  const checked = await dt.attempt('return (await checkForUpdates()).kind;');
+  if (checked === 'error') console.log('  (controllo su GitHub non riuscito: forse troppe richieste dal server di prova, non è un errore dell\'app)');
+  else check(checked === 'current' || checked === 'available', `l'app chiede a GitHub l'ultima versione (${checked})`, String(checked));
+
+  // Versione finta 99.0.0 che punta a un APK vero di Lupus (1.9.1): permesso, impostazioni, ritorno, download, installazione
+  const apk = 'https://github.com/Nikcirri/lupus/releases/download/v1.9.1/Lupus-v1.9.1.apk';
+  await dt.run(`localStorage.setItem('lupus_updates_v1', JSON.stringify({ lastCheck: new Date().toISOString(), latestVersion: '99.0.0', apkUrl: ${JSON.stringify(apk)}, notes: ['Prima novità', 'Seconda novità'] })); updateBannerHidden = false; renderUpdateBanner(); return true;`);
+  check(await dt.attempt("return getComputedStyle(document.getElementById('updateBanner')).display !== 'none' && document.getElementById('updateBanner').textContent.includes('99.0.0');") === true, 'avviso in alto con la nuova versione');
+  screenshot('7-avviso-aggiornamento.png');
+  await dt.run("document.querySelector('#updateBanner .btn-primary').click(); return true;");
+  await waitFor(dt, "return document.getElementById('modalUpdatePermission').classList.contains('active');", 'senza permesso spiega cosa toccare', 10);
+  await dt.run("document.querySelector('#modalUpdatePermission .btn-primary').click(); return true;");
+  let settings = '';
+  for (let i = 0; i < 20 && !/settings/i.test(settings); i++) { await sleep(500); settings = focusedWindow(); }
+  check(/settings/i.test(settings), 'si aprono le impostazioni "Installa app sconosciute"', settings.trim());
+  await sleep(1000);
+  screenshot('8-permesso.png');
+  adb(`shell appops set ${PKG} REQUEST_INSTALL_PACKAGES allow`);
+  adb('shell input keyevent KEYCODE_BACK');
+  await waitFor(dt, "return updatePhase === 'download' || updatePhase === 'install';", 'tornati nell\'app il download riparte da solo', 20);
+  let maxPercent = 0;
+  for (let i = 0; i < 120; i++) {
+    const st = await dt.attempt('return { phase: updatePhase, percent: updatePercent };');
+    if (st && typeof st.percent === 'number') maxPercent = Math.max(maxPercent, st.percent);
+    if (st && st.phase !== 'download') break;
+    await sleep(500);
+  }
+  check(maxPercent === 100, 'download completo (percentuale fino a 100)', String(maxPercent));
+  let installer = '';
+  for (let i = 0; i < 30 && !/packageinstaller/i.test(installer); i++) { await sleep(500); installer = focusedWindow(); }
+  check(/packageinstaller/i.test(installer), 'si apre l\'installazione di Android', installer.trim());
+  check(await dt.attempt('return updatePhase;') === 'install', 'l\'avviso dice cosa toccare nell\'installazione');
+  await sleep(1000);
+  screenshot('9-installazione.png');
+  adb('shell input keyevent KEYCODE_BACK');
+  await sleep(1500);
+  if (!appInFront()) { adb('shell input keyevent KEYCODE_BACK'); await sleep(1500); }
+  await waitFor(dt, "return updatePhase === 'idle' && document.getElementById('updateBanner').textContent.includes('Aggiorna');", 'annullata l\'installazione si può riprovare', 10);
+  await dt.run("localStorage.removeItem('lupus_updates_v1'); renderUpdateBanner(); return true;");
+
   console.log('Una partita, come farebbe una persona');
   await dt.run("const input = document.getElementById('playerNameInput'); input.value = 'Anna, Bruno, Carla, Dario, Elena, Fabio'; addPlayerFromInput(); return true;");
   check(await dt.attempt("return document.querySelectorAll('.player-chip').length;") === 6, '6 giocatori aggiunti');

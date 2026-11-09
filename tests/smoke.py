@@ -638,13 +638,60 @@ def main():
         page.click("#btnInfoTop")
         page.evaluate("handleAndroidBack()")
 
-        # Avviso aggiornamento simulato
+        print("Aggiornamenti")
+        page.click("#btnInfoTop")
+        check(page.locator("#infoUpdates").is_visible() and "Versione installata: " in page.locator("#infoVersion").inner_text(), "sezione Aggiornamenti con la versione installata")
+        check(page.locator("#btnInfoSelfUpdate").is_visible() and page.locator("#infoUpdates button:has-text('Scarica da GitHub')").is_visible(), "sempre i due pulsanti: dall'app e da GitHub")
+        page.evaluate("handleAndroidBack()")
+        apk = "https://github.com/Nikcirri/lupus/releases/download/v99.0.0/Lupus-v99.0.0.apk"
         page.evaluate(
-            """() => { localStorage.setItem('lupus_updates_v1', JSON.stringify({ lastCheck: new Date().toISOString(), latestVersion: '99.0.0', apkUrl: 'https://example.com/x.apk' })); renderUpdateBanner(); }"""
+            """(apk) => { localStorage.setItem('lupus_updates_v1', JSON.stringify({ lastCheck: new Date().toISOString(), latestVersion: '99.0.0', apkUrl: apk,
+                pageUrl: 'https://github.com/Nikcirri/lupus/releases/tag/v99.0.0', notes: ['Prima novità', 'Seconda novità', 'Terza novità', 'Quarta novità'] }));
+              updateBannerHidden = false; renderUpdateBanner(); }""",
+            apk,
         )
-        check(page.locator("#updateBanner").is_visible(), "avviso nuova versione")
-        page.click("text=Più tardi")
-        check(page.locator("#updateBanner").is_hidden(), "avviso nascosto con Più tardi")
+        banner = page.locator("#updateBanner")
+        check(banner.is_visible() and "Nuova versione 99.0.0" in banner.inner_text(), "avviso in alto con il numero di versione")
+        check(banner.locator(".update-notes li").count() == 3 and "Quarta" not in banner.inner_text(), "con le prime 3 novità")
+        banner.locator("button:has-text('Dopo')").click()
+        check(banner.is_hidden(), "Dopo chiude l'avviso")
+        check("ℹ️" in page.locator("#toastContainer").inner_text() and "Aggiornamenti" in page.locator("#toastContainer").inner_text(), "e dice dove ritrovarlo")
+        page.evaluate("autoCheckForUpdates()")
+        check(banner.is_hidden(), "dopo Dopo l'avviso non torna fino alla prossima apertura")
+
+        # Telefono Android finto: permesso, impostazioni, ritorno nell'app, download con percentuale, installazione
+        page.evaluate(
+            """() => {
+              window.__upd = { allowed: false, settings: 0, downloads: [], finish: null };
+              Object.assign(window.LupusApp, {
+                canSelfUpdate: true,
+                installAllowed: async () => window.__upd.allowed,
+                openInstallSettings: async () => { window.__upd.settings++; },
+                downloadAndInstall: (url, onProgress) => new Promise(resolve => { window.__upd.downloads.push(url); window.__upd.progress = onProgress; window.__upd.finish = resolve; })
+              });
+              updateBannerHidden = false; renderUpdateBanner();
+            }"""
+        )
+        banner.locator("button:has-text('Aggiorna')").click()
+        check(page.locator("#modalUpdatePermission").is_visible() and "Consenti da questa origine" in page.locator("#modalUpdatePermission").inner_text(), "se manca il permesso spiega cosa toccare")
+        page.click("#modalUpdatePermission button:has-text('Apri impostazioni')")
+        check(page.evaluate("window.__upd.settings") == 1 and "Dai il permesso" in banner.inner_text(), "apre le impostazioni giuste")
+        check(page.evaluate("loadUpdateState().permissionAskedAt") is not None, "ricorda di riprendere (anche se Android chiude l'app)")
+        page.evaluate("window.__upd.allowed = true; handleAppResume()")
+        page.wait_for_timeout(200)
+        check(page.evaluate("window.__upd.downloads[0]") == apk and "Scarico la versione 99.0.0" in banner.inner_text(), "tornato nell'app riparte da solo e scarica")
+        page.evaluate("window.__upd.progress(42)")
+        check("Scarico la versione 99.0.0… 42%" in banner.inner_text() and page.locator("#updateBannerBar").evaluate("b => b.style.width") == "42%", "con la percentuale")
+        page.click("#btnInfoTop")
+        check("42%" in page.locator("#infoUpdateStatus").inner_text() and page.locator("#btnInfoSelfUpdate").is_disabled(), "la percentuale anche in Aggiornamenti")
+        page.evaluate("window.__upd.finish()")
+        page.wait_for_timeout(100)
+        check("Quasi fatto" in banner.inner_text(), "poi si apre l'installazione di Android")
+        page.evaluate("handleAppResume()")
+        check("Nuova versione 99.0.0" in banner.inner_text(), "se si annulla l'installazione si può riprovare")
+        page.evaluate("handleAndroidBack()")
+        page.evaluate("localStorage.removeItem('lupus_updates_v1'); renderUpdateBanner()")
+        check(banner.is_hidden(), "niente avviso senza versioni nuove")
 
         print("Backup")
         page.click("#btnInfoTop")
@@ -730,6 +777,7 @@ def main():
         page.reload()
         page.wait_for_load_state("networkidle")
         check(page.locator("#modalWhatsNew").is_visible() and "Novità di Lupus" in page.locator("#whatsNewTitle").inner_text(), "dopo un aggiornamento compaiono le novità")
+        check("App aggiornata alla versione " in page.locator("#toastContainer").inner_text(), "e il messaggio App aggiornata alla versione X")
         page.click("#modalWhatsNew button:has-text('Ok, giochiamo')")
         page.reload()
         page.wait_for_load_state("networkidle")

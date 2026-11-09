@@ -1071,8 +1071,57 @@
     }
 
     .update-banner {
+      margin: 14px 14px 0;
       border-color: var(--accent-primary);
       background: rgba(var(--rgb-sky), 0.1);
+      gap: 10px;
+    }
+
+    .update-banner .card-subtitle {
+      color: var(--text-main);
+    }
+
+    .update-notes {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 0.88rem;
+      line-height: 1.4;
+      color: var(--text-muted);
+    }
+
+    .update-notes li + li {
+      margin-top: 3px;
+    }
+
+    .update-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .update-actions .btn {
+      flex: 1;
+    }
+
+    .update-progress {
+      width: 100%;
+      height: 10px;
+      border-radius: 5px;
+      background: var(--bg-main);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .update-progress div {
+      height: 100%;
+      width: 0;
+      background: var(--accent-primary);
+      transition: width 0.2s ease;
+    }
+
+    .update-steps {
+      margin: 0;
+      padding-left: 22px;
+      line-height: 1.5;
     }
 
     .death-choice {
@@ -2809,20 +2858,13 @@
       </div>
     </header>
 
+    <!-- Avviso in alto: nuova versione su GitHub, download e installazione (lo riempie renderUpdateBanner) -->
+    <div id="updateBanner" class="card update-banner" role="status" style="display: none;"></div>
+
     <!-- ==========================================
          SCHERMATA 1: SETUP GIOCATORI E RUOLI
     =========================================== -->
     <section id="screenSetup" class="screen active">
-
-      <!-- Avviso nuova versione disponibile (compare solo nell'app quando GitHub ha una versione più nuova) -->
-      <div id="updateBanner" class="card update-banner" style="display: none;">
-        <div class="card-title">🆕 Nuova versione di Lupus</div>
-        <p id="updateBannerText" class="card-subtitle" style="color: var(--text-main);"></p>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button class="btn btn-primary" style="flex: 2;" onclick="downloadUpdate()">⬇️ Scarica l'aggiornamento</button>
-          <button class="btn btn-sm" style="flex: 1;" onclick="dismissUpdateBanner()">Più tardi</button>
-        </div>
-      </div>
 
       <!-- Banner Riprendi Partita in Corso (visibile se esiste una partita salvata) -->
       <div id="resumeBanner" class="card" style="display: none; border-color: var(--accent-success); background: rgba(var(--rgb-sage), 0.08);">
@@ -3527,18 +3569,24 @@
         <div class="card-title">🐺 Lupus</div>
         <button class="icon-btn" onclick="closeInfoModal()" aria-label="Chiudi">✖</button>
       </div>
-      <div id="infoVersion" class="badge" style="align-self: flex-start;">Versione</div>
       <p class="card-subtitle" style="color: var(--text-main);">
         L'assistente del Narratore per Lupus in Fabula. Funziona senza internet: giocatori, ruoli e partita restano salvati sul telefono.
       </p>
-      <div class="info-row">
-        <div id="infoUpdateStatus">Non hai ancora controllato gli aggiornamenti.</div>
+
+      <div id="infoUpdates" class="info-share">
+        <div class="switch-title">🔄 Aggiornamenti</div>
+        <div id="infoVersion" class="badge">Versione installata</div>
+        <div id="infoUpdateStatus" class="card-subtitle" style="color: var(--text-main);">Non hai ancora controllato gli aggiornamenti.</div>
+        <div id="infoUpdateProgress" class="update-progress" style="display: none;"><div></div></div>
+        <button id="btnInfoCheck" class="btn btn-primary" style="width: 100%;" onclick="manualCheckForUpdates()">🔄 Controlla aggiornamenti</button>
+        <div class="update-actions" style="width: 100%;">
+          <button id="btnInfoSelfUpdate" class="btn btn-success" onclick="selfUpdateFromInfo()">📲 Aggiorna dall'app</button>
+          <button class="btn" onclick="openReleasesPage()">🌐 Scarica da GitHub</button>
+        </div>
+        <div class="card-subtitle">
+          La nuova versione si installa sopra quella vecchia: partite, ruoli e statistiche restano. Il file scaricato sta nella cache dell'app: per liberare spazio basta <strong>Svuota cache</strong> nelle impostazioni di Android.
+        </div>
       </div>
-      <button id="btnInfoCheck" class="btn btn-primary" onclick="manualCheckForUpdates()">🔄 Controlla aggiornamenti</button>
-      <button id="btnInfoDownload" class="btn btn-success" onclick="downloadUpdate()" style="display: none;">⬇️ Scarica l'aggiornamento</button>
-      <p class="card-subtitle">
-        Per aggiornare: scarica il file, aprilo e tocca <strong>Aggiorna</strong>. La nuova versione si installa sopra quella vecchia e i dati restano.
-      </p>
       <button class="btn" onclick="openWhatsNewModal('all')">📜 Novità delle ultime versioni</button>
       <button class="btn" onclick="openWelcome()">👋 Come funziona Lupus</button>
 
@@ -3794,6 +3842,28 @@
   <!-- ==========================================
        MODALE: NOVITÀ DELLA VERSIONE
   =========================================== -->
+  <!-- ==========================================
+       MODALE: PERMESSO PER INSTALLARE GLI AGGIORNAMENTI
+  =========================================== -->
+  <div id="modalUpdatePermission" class="modal-overlay">
+    <div class="modal-box" style="max-width: 420px;">
+      <div class="card-title">🔐 Serve un permesso, una volta sola</div>
+      <p class="card-subtitle" style="color: var(--text-main);">
+        Per installare gli aggiornamenti dall'app, Android chiede di consentirlo.
+      </p>
+      <ol class="update-steps">
+        <li>Tocca <strong>Apri impostazioni</strong> qui sotto.</li>
+        <li>Attiva <strong>Consenti da questa origine</strong>.</li>
+        <li>Torna indietro con il tasto <strong>Indietro</strong> del telefono.</li>
+      </ol>
+      <p class="card-subtitle">Quando torni in Lupus l'aggiornamento riparte da solo.</p>
+      <div class="update-actions">
+        <button class="btn" onclick="closeUpdatePermissionModal()">Annulla</button>
+        <button class="btn btn-primary" onclick="openUpdatePermissionSettings()">⚙️ Apri impostazioni</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalWhatsNew" class="modal-overlay">
     <div class="modal-box" style="max-width: 460px;">
       <div class="card-header">

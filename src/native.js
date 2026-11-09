@@ -1,6 +1,6 @@
 // Collegamento tra il gioco (public/game.js) e le funzioni del telefono Android.
 // Il gioco usa window.LupusApp se c'è; nel browser queste funzioni fanno il minimo indispensabile.
-import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
+import { Capacitor, SystemBars, SystemBarsStyle, registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { Share } from '@capacitor/share';
@@ -8,6 +8,10 @@ import { Clipboard } from '@capacitor/clipboard';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 
 const isNative = Capacitor.isNativePlatform();
+
+// Plugin dell'app (android/app/src/main/java/com/nikcirri/lupus/AppUpdaterPlugin.java):
+// scarica l'APK della nuova versione da GitHub e apre l'installazione di Android.
+const AppUpdater = registerPlugin('AppUpdater');
 
 window.LupusApp = {
   version: __APP_VERSION__,
@@ -69,7 +73,34 @@ window.LupusApp = {
     App.minimizeApp().catch(() => App.exitApp());
   },
 
-  /** Apre un link fuori dall'app, nel browser del telefono (che scarica l'APK). */
+  /** L'app può scaricare e installare da sola i suoi aggiornamenti (solo nell'app Android). */
+  canSelfUpdate: isNative,
+
+  /** Android permette a Lupus di installare aggiornamenti? (impostazione "Installa app sconosciute") */
+  async installAllowed() {
+    if (!isNative) return false;
+    return (await AppUpdater.canInstall()).allowed === true;
+  },
+
+  /** Apre l'impostazione "Installa app sconosciute" di Lupus. */
+  async openInstallSettings() {
+    await AppUpdater.openInstallSettings();
+  },
+
+  /**
+   * Scarica l'APK (nella cache dell'app) e apre l'installazione di Android.
+   * onProgress riceve la percentuale; finisce quando si apre la finestra di installazione.
+   */
+  async downloadAndInstall(url, onProgress) {
+    const handle = await AppUpdater.addListener('progress', e => onProgress(Number(e.percent) || 0));
+    try {
+      await AppUpdater.downloadAndInstall({ url });
+    } finally {
+      await handle.remove();
+    }
+  },
+
+  /** Apre un link fuori dall'app, nel browser del telefono. */
   openExternal(url) {
     const a = document.createElement('a');
     a.href = url;
@@ -88,5 +119,15 @@ if (isNative) {
   App.addListener('backButton', () => {
     const handled = typeof window.handleAndroidBack === 'function' && window.handleAndroidBack();
     if (!handled) window.LupusApp.minimize();
+  });
+
+  // Ritorno nell'app (dalle impostazioni, dall'installazione o da un'altra app): controlla gli aggiornamenti.
+  App.addListener('resume', () => {
+    if (typeof window.handleAppResume === 'function') window.handleAppResume();
+  });
+} else {
+  // Nel browser: tornare sulla scheda vale come tornare nell'app.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && typeof window.handleAppResume === 'function') window.handleAppResume();
   });
 }

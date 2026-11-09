@@ -396,10 +396,19 @@ function evaluateVictory(players, findRole) {
 
 /* =========================================================================
    4. AGGIORNAMENTI DELL'APP (FUNZIONI PURE)
+   L'app chiede a GitHub l'ultima Release e, se è più nuova, scarica l'APK e apre l'installazione.
 ========================================================================= */
 const UPDATE_API_URL = 'https://api.github.com/repos/Nikcirri/lupus/releases/latest';
 const UPDATE_PAGE_URL = 'https://github.com/Nikcirri/lupus/releases/latest';
-const UPDATE_AUTO_CHECK_HOURS = 24;
+// Gli unici file che l'app può scaricare (lo stesso controllo c'è nel plugin Android AppUpdaterPlugin.java)
+const UPDATE_APK_PREFIX = 'https://github.com/Nikcirri/lupus/releases/download/';
+// Controllo automatico all'apertura e al ritorno nell'app, al massimo ogni 10 minuti
+const UPDATE_AUTO_CHECK_MINUTES = 10;
+// Novità mostrate nell'avviso in alto
+const UPDATE_BANNER_NOTES = 3;
+// Dopo aver aperto le impostazioni per il permesso "Installa app sconosciute", l'aggiornamento riparte
+// da solo se si torna nell'app entro questo tempo (anche se intanto Android ha chiuso e riaperto Lupus)
+const UPDATE_PERMISSION_RESUME_MINUTES = 15;
 
 /** "v1.2.3" o "1.2.3" → [1, 2, 3], altrimenti null. */
 function parseVersion(v) {
@@ -417,23 +426,84 @@ function isNewerVersion(candidate, current) {
   return false;
 }
 
+/** Indirizzo di un APK delle Release di Lupus su GitHub? (solo https, solo questo repository, solo .apk) */
+function isAllowedApkUrl(url) {
+  return typeof url === 'string' &&
+    url.startsWith(UPDATE_APK_PREFIX) &&
+    url.endsWith('.apk') &&
+    !url.includes('..') &&
+    !/[\s?#]/.test(url);
+}
+
+/** L'APK tra i file della Release (il primo con indirizzo permesso), oppure null. */
+function pickApkAsset(assets) {
+  const list = Array.isArray(assets) ? assets : [];
+  const apk = list.find(a => a && typeof a.name === 'string' && a.name.endsWith('.apk') && isAllowedApkUrl(a.browser_download_url));
+  return apk ? apk.browser_download_url : null;
+}
+
+/** Le prime voci dell'elenco delle novità (righe "- ..." del testo della Release). */
+function releaseNotes(body, max = 6) {
+  return String(body || '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.startsWith('- '))
+    .map(l => l.slice(2).replace(/[*`_]/g, '').trim())
+    .filter(l => l.length > 0)
+    .map(l => (l.length > 110 ? `${l.slice(0, 109).trimEnd()}…` : l))
+    .slice(0, max);
+}
+
 /** Dati utili dalla risposta di GitHub (null se non è una Release valida). */
 function parseRelease(json) {
   if (!json || typeof json !== 'object' || typeof json.tag_name !== 'string' || !parseVersion(json.tag_name)) return null;
-  const assets = Array.isArray(json.assets) ? json.assets : [];
-  const apk = assets.find(a => a && typeof a.name === 'string' && a.name.endsWith('.apk') && typeof a.browser_download_url === 'string');
   return {
-    version: json.tag_name.replace(/^v/, ''),
-    apkUrl: apk ? apk.browser_download_url : null,
-    pageUrl: typeof json.html_url === 'string' ? json.html_url : UPDATE_PAGE_URL
+    version: json.tag_name.trim().replace(/^v/, ''),
+    apkUrl: pickApkAsset(json.assets),
+    pageUrl: typeof json.html_url === 'string' && json.html_url.startsWith('https://github.com/Nikcirri/lupus/') ? json.html_url : UPDATE_PAGE_URL,
+    notes: releaseNotes(json.body)
   };
 }
 
-/** Controllo automatico al massimo una volta ogni 24 ore. */
+/** Controllo automatico: al massimo ogni 10 minuti (anche se l'ultimo controllo è rotto o nel futuro). */
 function shouldAutoCheck(lastCheckIso, now) {
   if (!lastCheckIso) return true;
   const last = new Date(lastCheckIso).getTime();
-  return !Number.isFinite(last) || now.getTime() - last >= UPDATE_AUTO_CHECK_HOURS * 3600000;
+  if (!Number.isFinite(last) || last > now.getTime()) return true;
+  return now.getTime() - last >= UPDATE_AUTO_CHECK_MINUTES * 60000;
+}
+
+/** Stato salvato degli aggiornamenti, ripulito (versioni e indirizzi validi soltanto). */
+function sanitizeUpdateState(saved) {
+  const src = saved && typeof saved === 'object' ? saved : {};
+  const lastCheck = typeof src.lastCheck === 'string' && Number.isFinite(new Date(src.lastCheck).getTime()) ? src.lastCheck : null;
+  const latestVersion = parseVersion(src.latestVersion) ? String(src.latestVersion).replace(/^v/, '') : null;
+  return {
+    lastCheck,
+    latestVersion,
+    apkUrl: latestVersion && isAllowedApkUrl(src.apkUrl) ? src.apkUrl : null,
+    pageUrl: typeof src.pageUrl === 'string' && src.pageUrl.startsWith('https://github.com/Nikcirri/lupus/') ? src.pageUrl : UPDATE_PAGE_URL,
+    notes: latestVersion && Array.isArray(src.notes) ? src.notes.filter(n => typeof n === 'string').slice(0, 6) : [],
+    permissionAskedAt: typeof src.permissionAskedAt === 'string' && Number.isFinite(new Date(src.permissionAskedAt).getTime()) ? src.permissionAskedAt : null
+  };
+}
+
+/** La versione nuova da installare (lo stato salvato), oppure null se quella installata è già l'ultima. */
+function pendingUpdate(state, currentVersion) {
+  return state && state.latestVersion && isNewerVersion(state.latestVersion, currentVersion) ? state : null;
+}
+
+/** Si torna nell'app dopo essere andati a dare il permesso: l'aggiornamento deve ripartire da solo? */
+function shouldResumeAfterPermission(askedAtIso, now) {
+  if (!askedAtIso) return false;
+  const asked = new Date(askedAtIso).getTime();
+  if (!Number.isFinite(asked) || asked > now.getTime() + 60000) return false;
+  return now.getTime() - asked <= UPDATE_PERMISSION_RESUME_MINUTES * 60000;
+}
+
+/** Prima apertura dopo un aggiornamento? (la versione vista l'ultima volta è più vecchia di quella di adesso) */
+function justUpdated(seenVersion, currentVersion) {
+  return !!parseVersion(seenVersion) && isNewerVersion(currentVersion, seenVersion);
 }
 
 /* =========================================================================

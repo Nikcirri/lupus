@@ -8,7 +8,7 @@ const code = readFileSync(new URL('../public/rules.js', import.meta.url), 'utf8'
 const ctx = vm.createContext({ TextEncoder, TextDecoder, btoa, atob });
 vm.runInContext(
   code +
-    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, TIE_RULE_KEYS, tieOutcome, roleRevealLine, deckAnnouncement, SURPRISE_EVENTS, findSurpriseEvent, eventEffects, drawSurpriseEvent, pickSurpriseEvent, secondTargetKey, wolvesTargetIds, backupFileName, buildBackup, parseBackup, sanitizeBackupSettings, roleMarkEffect, markVoteBonus, VOTE_ABSTAIN, deckKey, buildMatchRecord, upsertMatchRecord, removeMatchRecord, summarizeRecords, sanitizeMatchRecords, parseDeckKey, refreshOutdatedRoleTexts, isReplacedRoleId, replacementRoleId, removeReplacedRoles, replaceRolesInDeck, replaceRolesInMatch, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
+    '\nglobalThis.R = { DEFAULT_ROLES, PRESETS_BY_COUNT, countDeck, getDeckProblems, findBurnedOnDay, evaluateVictory, parseVersion, isNewerVersion, parseRelease, shouldAutoCheck, isAllowedApkUrl, pickApkAsset, releaseNotes, sanitizeUpdateState, pendingUpdate, shouldResumeAfterPermission, justUpdated, UPDATE_BANNER_NOTES, getVoters, voteWeight, tallyVotes, buildTimeline, encodeRolesShare, decodeRolesShare, sanitizeImportedRole, isRoleCustomized, mergeImportedRoles, NIGHT_ACTIONS, roleNightAction, roleActionRules, wakesOnNight, buildNightPlan, getTargetOptions, investigateAnswer, copyResultRoleId, resolveNight, buildMorningAnnouncement, rolePhrase, roleActionRules, roleWakesWithWolves, roleDeathAction, roleVictory, roleTraits, roleBalance, roleMarkText, hasDeathShot, computePowerUsage, witchSaveKey, deckBalance, getNightOrderRoles, applyNightOrder, addNewDefaultRoles, ORIGINAL_DEFAULT_ROLE_IDS, VALID_WAKE_TIMINGS, WAKE_TIMING_LABELS, roleAbilityNotes, TIE_RULE_KEYS, tieOutcome, roleRevealLine, deckAnnouncement, SURPRISE_EVENTS, findSurpriseEvent, eventEffects, drawSurpriseEvent, pickSurpriseEvent, secondTargetKey, wolvesTargetIds, backupFileName, buildBackup, parseBackup, sanitizeBackupSettings, roleMarkEffect, markVoteBonus, VOTE_ABSTAIN, deckKey, buildMatchRecord, upsertMatchRecord, removeMatchRecord, summarizeRecords, sanitizeMatchRecords, parseDeckKey, refreshOutdatedRoleTexts, isReplacedRoleId, replacementRoleId, removeReplacedRoles, replaceRolesInDeck, replaceRolesInMatch, PLAYER_COLORS, assignPlayerColors, playerInitial, rememberPlayerNames, suggestPlayerNames };',
   ctx
 );
 const R = ctx.R;
@@ -100,19 +100,87 @@ test('versioni e aggiornamenti', () => {
   assert.equal(R.isNewerVersion('0.9.0', '1.0.0'), false);
   assert.equal(R.isNewerVersion('boh', '1.0.0'), false);
 
-  const rel = R.parseRelease({
-    tag_name: 'v1.1.0',
-    html_url: 'https://github.com/Nikcirri/lupus/releases/tag/v1.1.0',
-    assets: [{ name: 'Lupus-v1.1.0.apk', browser_download_url: 'https://example.com/Lupus-v1.1.0.apk' }]
-  });
-  assert.equal(rel.version, '1.1.0');
-  assert.equal(rel.apkUrl, 'https://example.com/Lupus-v1.1.0.apk');
-  assert.equal(R.parseRelease({ message: 'Not Found' }), null);
-
   const now = new Date('2026-11-06T12:00:00Z');
   assert.equal(R.shouldAutoCheck(null, now), true);
-  assert.equal(R.shouldAutoCheck('2026-11-06T01:00:00Z', now), false);
-  assert.equal(R.shouldAutoCheck('2026-11-05T11:00:00Z', now), true);
+  assert.equal(R.shouldAutoCheck('2026-11-06T11:55:00Z', now), false, 'controllato 5 minuti fa: si aspetta');
+  assert.equal(R.shouldAutoCheck('2026-11-06T11:50:00Z', now), true, 'controllato 10 minuti fa: si ricontrolla');
+  assert.equal(R.shouldAutoCheck('rotto', now), true);
+  assert.equal(R.shouldAutoCheck('2026-11-07T12:00:00Z', now), true, 'data nel futuro: si ricontrolla');
+});
+
+test('aggiornamento dentro l\'app: solo APK delle Release di Lupus', () => {
+  const ok = 'https://github.com/Nikcirri/lupus/releases/download/v1.10.0/Lupus-v1.10.0.apk';
+  assert.equal(R.isAllowedApkUrl(ok), true);
+  for (const bad of [
+    'http://github.com/Nikcirri/lupus/releases/download/v1.10.0/Lupus-v1.10.0.apk',
+    'https://github.com/Nikcirri/nutrizione/releases/download/v1.0.0/Nutrizione.apk',
+    'https://github.com/Nikcirri/lupus/releases/download/v1.10.0/Lupus.zip',
+    'https://example.com/Lupus-v1.10.0.apk',
+    'https://github.com/Nikcirri/lupus/releases/download/../../altro/x.apk',
+    'https://github.com/Nikcirri/lupus/releases/download/v1/x.apk?y=.apk',
+    'https://github.com/Nikcirri/lupus.evil.com/releases/download/x.apk',
+    null
+  ]) assert.equal(R.isAllowedApkUrl(bad), false, String(bad));
+
+  assert.equal(R.pickApkAsset([
+    { name: 'note.txt', browser_download_url: 'https://github.com/Nikcirri/lupus/releases/download/v1.10.0/note.txt' },
+    { name: 'altro.apk', browser_download_url: 'https://example.com/altro.apk' },
+    { name: 'Lupus-v1.10.0.apk', browser_download_url: ok }
+  ]), ok);
+  assert.equal(R.pickApkAsset(null), null);
+
+  const body = 'App più veloce.\n\n- Uno\n- **Due** con `codice`\n- Tre\n- Quattro\n\n### Come installare\nScarica il file.';
+  assert.deepEqual([...R.releaseNotes(body)], ['Uno', 'Due con codice', 'Tre', 'Quattro']);
+  assert.equal(R.releaseNotes('- ' + 'x'.repeat(200))[0].length, 110);
+  assert.equal(R.UPDATE_BANNER_NOTES, 3);
+
+  const rel = R.parseRelease({
+    tag_name: 'v1.10.0',
+    html_url: 'https://github.com/Nikcirri/lupus/releases/tag/v1.10.0',
+    body,
+    assets: [{ name: 'Lupus-v1.10.0.apk', browser_download_url: ok }]
+  });
+  assert.equal(rel.version, '1.10.0');
+  assert.equal(rel.apkUrl, ok);
+  assert.equal(rel.pageUrl, 'https://github.com/Nikcirri/lupus/releases/tag/v1.10.0');
+  assert.deepEqual([...rel.notes], ['Uno', 'Due con codice', 'Tre', 'Quattro']);
+  const foreign = R.parseRelease({ tag_name: 'v2.0.0', html_url: 'https://evil.com', assets: [{ name: 'x.apk', browser_download_url: 'https://example.com/x.apk' }] });
+  assert.equal(foreign.apkUrl, null, 'APK fuori dalle Release di Lupus: niente download dall\'app');
+  assert.equal(foreign.pageUrl, 'https://github.com/Nikcirri/lupus/releases/latest');
+  assert.equal(R.parseRelease({ message: 'Not Found' }), null);
+  assert.equal(R.parseRelease(null), null);
+});
+
+test('aggiornamento: stato salvato, versione nuova, permesso e messaggio dopo l\'aggiornamento', () => {
+  const ok = 'https://github.com/Nikcirri/lupus/releases/download/v1.10.0/Lupus-v1.10.0.apk';
+  const st = R.sanitizeUpdateState({ lastCheck: '2026-11-06T12:00:00Z', latestVersion: 'v1.10.0', apkUrl: ok, notes: ['Uno', 3, 'Due'], dismissedVersion: '1.9.0', permissionAskedAt: 'rotto' });
+  assert.equal(st.latestVersion, '1.10.0');
+  assert.equal(st.apkUrl, ok);
+  assert.deepEqual([...st.notes], ['Uno', 'Due']);
+  assert.equal(st.permissionAskedAt, null);
+  assert.equal('dismissedVersion' in st, false);
+  const bad = R.sanitizeUpdateState({ latestVersion: 'boh', apkUrl: 'https://example.com/x.apk', pageUrl: 'https://evil.com' });
+  assert.equal(bad.latestVersion, null);
+  assert.equal(bad.apkUrl, null);
+  assert.equal(bad.pageUrl, 'https://github.com/Nikcirri/lupus/releases/latest');
+  assert.equal(R.sanitizeUpdateState(null).lastCheck, null);
+  // stato salvato dalla 1.9 (senza novità): va bene lo stesso
+  assert.equal(R.sanitizeUpdateState({ lastCheck: '2026-11-06T12:00:00Z', latestVersion: '1.9.1', apkUrl: 'https://github.com/Nikcirri/lupus/releases/download/v1.9.1/Lupus-v1.9.1.apk', pageUrl: 'https://github.com/Nikcirri/lupus/releases/tag/v1.9.1', dismissedVersion: null }).notes.length, 0);
+
+  assert.equal(R.pendingUpdate(st, '1.9.1'), st);
+  assert.equal(R.pendingUpdate(st, '1.10.0'), null);
+  assert.equal(R.pendingUpdate(bad, '1.9.1'), null);
+
+  const now = new Date('2026-11-06T12:00:00Z');
+  assert.equal(R.shouldResumeAfterPermission('2026-11-06T11:50:00Z', now), true);
+  assert.equal(R.shouldResumeAfterPermission('2026-11-06T11:40:00Z', now), false, 'troppo tempo fa: non riparte da solo');
+  assert.equal(R.shouldResumeAfterPermission(null, now), false);
+  assert.equal(R.shouldResumeAfterPermission('rotto', now), false);
+
+  assert.equal(R.justUpdated('1.9.1', '1.10.0'), true);
+  assert.equal(R.justUpdated('1.10.0', '1.10.0'), false);
+  assert.equal(R.justUpdated(null, '1.10.0'), false, 'prima installazione: niente messaggio');
+  assert.equal(R.justUpdated('1.10.0', '1.9.1'), false);
 });
 
 test('votazione: Sindaco vale 2, il Fantasma vota, i morti no', () => {
